@@ -13,15 +13,18 @@
     <compiler-plugin.version>3.13.0</compiler-plugin.version>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+    <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.version>3.15.1</quarkus.platform.version>
     <langchain4j.version>1.8.4</langchain4j.version>
+    <strimzi.version>0.46.0</strimzi.version>
+    <pdfbox.version>3.0.3</pdfbox.version>
     <skipITs>true</skipITs>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Quarkus BOM — manages all quarkus.* and fabric8 versions -->
       <dependency>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>${quarkus.platform.artifact-id}</artifactId>
@@ -29,11 +32,22 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- Quarkus LangChain4j BOM — manages quarkus-langchain4j-* versions -->
+      <dependency>
+        <groupId>io.quarkiverse.langchain4j</groupId>
+        <artifactId>quarkus-langchain4j-bom</artifactId>
+        <version>${langchain4j.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
   <dependencies>
-    <!-- REST -->
+
+    <!-- ============================================================ -->
+    <!-- REST                                                         -->
+    <!-- ============================================================ -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>
@@ -43,78 +57,79 @@
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
 
-    <!-- OpenShift client via Quarkus extension — manages fabric8 transitively -->
+    <!-- ============================================================ -->
+    <!-- LangChain4j — OpenAI-compatible client (works with vLLM)    -->
+    <!-- Version managed by quarkus-langchain4j-bom                  -->
+    <!-- ============================================================ -->
+    <dependency>
+      <groupId>io.quarkiverse.langchain4j</groupId>
+      <artifactId>quarkus-langchain4j-openai</artifactId>
+    </dependency>
+
+    <!-- ============================================================ -->
+    <!-- Kubernetes / OpenShift client                                -->
+    <!-- quarkus-openshift-client brings the runtime beans via CDI.  -->
+    <!-- The *-api jars are needed for compile-time class resolution. -->
+    <!-- All versions managed by quarkus-bom.                        -->
+    <!-- ============================================================ -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-openshift-client</artifactId>
     </dependency>
-
-    <!-- Fabric8 OpenShift client API — compile scope for KubernetesTool imports -->
     <dependency>
       <groupId>io.fabric8</groupId>
       <artifactId>openshift-client-api</artifactId>
     </dependency>
-
-    <!-- Fabric8 Kubernetes client API — compile scope for model classes -->
     <dependency>
       <groupId>io.fabric8</groupId>
       <artifactId>kubernetes-client-api</artifactId>
     </dependency>
 
-    <!-- Strimzi API model — typed access to Kafka CRDs -->
+    <!-- ============================================================ -->
+    <!-- Strimzi API — typed model classes for Kafka CRDs            -->
+    <!-- Used for reference only; actual queries use                 -->
+    <!-- genericKubernetesResources() to avoid version conflicts.    -->
+    <!-- ============================================================ -->
     <dependency>
       <groupId>io.strimzi</groupId>
       <artifactId>api</artifactId>
-      <version>0.46.0</version>
+      <version>${strimzi.version}</version>
     </dependency>
 
-    <!-- LangChain4j con soporte OpenAI-compatible -->
+    <!-- ============================================================ -->
+    <!-- PDF text extraction                                          -->
+    <!-- ============================================================ -->
     <dependency>
-      <groupId>io.quarkiverse.langchain4j</groupId>
-      <artifactId>quarkus-langchain4j-openai</artifactId>
-      <version>${langchain4j.version}</version>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>${pdfbox.version}</version>
     </dependency>
 
-    <dependency>
-      <groupId>io.quarkiverse.langchain4j</groupId>
-      <artifactId>quarkus-langchain4j-bom</artifactId>
-      <version>${langchain4j.version}</version>
-      <type>pom</type>
-      <scope>import</scope>
-    </dependency>
-
-    <!-- Web UI -->
+    <!-- ============================================================ -->
+    <!-- Config, health, web UI                                       -->
+    <!-- ============================================================ -->
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-qute</artifactId>
+      <artifactId>quarkus-config-yaml</artifactId>
     </dependency>
-
-    <!-- Config y health -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-health</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-config-yaml</artifactId>
+      <artifactId>quarkus-qute</artifactId>
     </dependency>
 
-    <!-- HTTP client para ChromaDB y KCS -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-rest-client</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-rest-client-jackson</artifactId>
-    </dependency>
-
-    <!-- Test -->
+    <!-- ============================================================ -->
+    <!-- Test                                                         -->
+    <!-- ============================================================ -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-junit5</artifactId>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
   <build>
@@ -145,4 +160,5 @@
       </plugin>
     </plugins>
   </build>
+
 </project>
