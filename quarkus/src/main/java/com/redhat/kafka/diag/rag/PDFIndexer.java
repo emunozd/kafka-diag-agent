@@ -203,7 +203,8 @@ public class PDFIndexer {
     private List<PageText> extractTextFromPdf(File file) throws IOException {
         List<PageText> pages = new ArrayList<>();
 
-        try (PDDocument doc = PDDocument.load(file)) {
+        try (java.io.InputStream is = new java.io.FileInputStream(file);
+        PDDocument doc = PDDocument.load(is)) {
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
 
