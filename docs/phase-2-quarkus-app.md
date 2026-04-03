@@ -1,24 +1,24 @@
-# Fase 2 — App Quarkus + Herramientas básicas de diagnóstico
+# Phase 2 — Quarkus App + Basic Diagnostic Tools
 ## Kafka Diagnostic Agent
 
-> **Objetivo**: Desplegar la app Quarkus en OCP con el agente LangChain4j funcional,  
-> los tools básicos de Kubernetes/OCP y Strimzi report, y la Web UI v1.  
-> Sin RAG todavía — el agente responde solo con datos reales del clúster.
+> **Goal**: Deploy the Quarkus app on OCP with a functional LangChain4j agent,
+> basic Kubernetes/OCP and Strimzi report tools, and the Web UI v1.
+> No RAG yet — the agent responds using only live cluster data.
 
 ---
 
-## Prerrequisitos
+## Prerequisites
 
-- Fase 1 completada y validada
-- Repositorio en GitHub: https://github.com/emunozd/kafka-diag-agent
-- `oc` CLI autenticado en el namespace `kafka-diag-agent`
+- Phase 1 completed and validated
+- GitHub repository: https://github.com/emunozd/kafka-diag-agent
+- `oc` CLI authenticated to the `kafka-diag-agent` namespace
 
 ---
 
-## Paso 1 — Build de la app en OCP via S2I
+## Step 1 — Build the app on OCP via S2I
 
-El BuildConfig ya está en el Helm chart. Si usaste Helm, salta al paso 2.
-Si no, aplícalo manualmente:
+The BuildConfig is already included in the Helm chart. If you used Helm, skip to step 2.
+Otherwise apply it manually:
 
 ```bash
 oc apply -f - <<'EOF'
@@ -59,17 +59,17 @@ spec:
 EOF
 ```
 
-Iniciar el build y monitorear:
+Start the build and follow logs:
 ```bash
 oc start-build kafka-diag-agent -n kafka-diag-agent --follow
 ```
 
-> El primer build tarda 3-5 minutos descargando dependencias Maven.
-> Los builds siguientes usan caché y son más rápidos.
+> The first build takes 3-5 minutes downloading Maven dependencies.
+> Subsequent builds use cache and are significantly faster.
 
 ---
 
-## Paso 2 — Desplegar la app
+## Step 2 — Deploy the app
 
 ```bash
 oc apply -f - <<'EOF'
@@ -164,43 +164,43 @@ spec:
 EOF
 ```
 
-Monitorear:
+Monitor:
 ```bash
 oc get pods -n kafka-diag-agent -l app=kafka-diag-app -w
 ```
 
-Obtener la URL de la app:
+Get the app URL:
 ```bash
 oc get route kafka-diag-app -n kafka-diag-agent -o jsonpath='{.spec.host}'
 ```
 
 ---
 
-## Paso 3 — Verificar health
+## Step 3 — Health check
 
 ```bash
 APP_URL=$(oc get route kafka-diag-app -n kafka-diag-agent \
   -o jsonpath='{.spec.host}')
 
 curl -s https://${APP_URL}/api/health
-# Esperado: {"status":"ok","agent":"kafka-diag-agent"}
+# Expected: {"status":"ok","agent":"kafka-diag-agent"}
 ```
 
 ---
 
-## Paso 4 — Prueba de diagnóstico básico
+## Step 4 — Diagnosis smoke tests
 
 ```bash
 APP_URL=$(oc get route kafka-diag-app -n kafka-diag-agent \
   -o jsonpath='{.spec.host}')
 
-# Prueba 1: resumen de arquitectura
+# Test 1: architecture summary
 curl -s https://${APP_URL}/api/diagnose \
   -H "Content-Type: application/json" \
   -d '{"question":"give me a brief status of the current cluster","namespace":"kafka-diag-agent"}' \
   | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['answer'])"
 
-# Prueba 2: override de namespace
+# Test 2: namespace override
 curl -s https://${APP_URL}/api/diagnose \
   -H "Content-Type: application/json" \
   -d '{"question":"list all kafka topics","namespace":"my-kafka-ns"}' \
@@ -209,46 +209,48 @@ curl -s https://${APP_URL}/api/diagnose \
 
 ---
 
-## Paso 5 — Web UI
+## Step 5 — Web UI
 
-Abrir en el navegador:
+Open in browser:
 ```
 https://<APP_URL>/advisor.html
 ```
 
 ---
 
-## Paso 6 — Redesplegar tras cambios en el código
+## Step 6 — Redeploy after code changes
 
 ```bash
-# Push al repo y hacer rebuild
 git push origin main
 oc start-build kafka-diag-agent -n kafka-diag-agent --follow
-
-# Cuando el build termine, el deployment se actualiza automáticamente
-# por el trigger de ImageStream
+# The deployment updates automatically via the ImageStream trigger
 ```
 
 ---
 
-## Notas importantes de la Fase 2
+## Key design decisions in Phase 2
 
-### /no_think forzado en el system prompt
-El system prompt incluye `/no_think` al inicio — esto desactiva el modo
-reasoning de Qwen3 que consume tokens innecesarios con bloques `<think>`.
-Adicionalmente, `DiagnosticResource.java` hace strip de cualquier bloque
-`<think>...</think>` residual antes de retornar la respuesta.
+### /no_think enforced in system prompt
+The system prompt starts with `/no_think` — this disables Qwen3 reasoning mode
+which wastes tokens with `<think>` blocks that add no value to diagnostic responses.
+Additionally, `DiagnosticResource.java` strips any residual `<think>...</think>`
+blocks before returning the response to the client.
 
-### Tool calling y Qwen3
-Los flags `--enable-auto-tool-choice` y `--tool-call-parser=hermes` en el
-ServingRuntime son obligatorios para que Qwen3 use los `@Tool` de LangChain4j.
+### Tool calling and Qwen3
+The `--enable-auto-tool-choice` and `--tool-call-parser=hermes` flags in the
+ServingRuntime are mandatory for Qwen3 to use LangChain4j `@Tool` methods.
 
 ### Namespace handling
-- Si el usuario no especifica namespace, se usa `APP_NAMESPACE` (el namespace del pod).
-- Si escribe "analyze my kafka cluster in namespace my-ns", el agente extrae
-  el namespace del texto y lo pasa a todos los tool calls automáticamente.
-- El namespace se antepone a la pregunta: `[namespace: my-ns] pregunta...`
+- If no namespace is specified, `APP_NAMESPACE` (the pod's own namespace) is used.
+- If the user writes "analyze my kafka cluster in namespace my-ns", the agent
+  extracts the namespace from the text and passes it to all tool calls automatically.
+- The namespace is prepended to the question: `[namespace: my-ns] question...`
 
-### RAG, upload y KCS
-En esta fase son placeholders — retornan mensajes informativos pero no bloquean el agente.
-Se implementan en Fases 3, 4 y 5 respectivamente.
+### Flexible LLM provider
+All LLM configuration comes from environment variables injected via OCP Secrets.
+To switch from Qwen3 to Claude or OpenAI, create the `llm-config` Secret and
+restart the pod — no code rebuild required.
+
+### RAG, upload, and KCS
+These are stubs in this phase — they return informative placeholder messages
+but do not block the agent. Full implementations arrive in Phases 3, 4, and 5.

@@ -10,9 +10,17 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * KCS Search Tool.
- * Si hay offline token configurado: intenta buscar via API del Customer Portal.
- * Si no hay token (o falla): retorna URL de búsqueda para que el usuario la abra.
+ * Red Hat KCS (Knowledge Centered Support) search tool.
+ *
+ * Two operating modes:
+ * - With offline token: queries the Red Hat Customer Portal API (Phase 5)
+ * - Without token (fallback): returns a pre-built search URL for manual access
+ *
+ * The token is optional. If RH_OFFLINE_TOKEN is not set in the OCP Secret,
+ * the app starts normally and this tool always uses fallback mode.
+ *
+ * Fallback mode is sufficient in most cases — it gives the user a direct
+ * link to relevant KCS solutions with the right search terms.
  */
 @ApplicationScoped
 public class KCSSearchTool {
@@ -30,21 +38,21 @@ public class KCSSearchTool {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
         String searchUrl = config.kcs().searchUrl().replace("{query}", encodedQuery);
 
-        // Si no hay token configurado — modo fallback directo
+        // If no token is configured, use fallback mode directly
         if (config.kcs().offlineToken() == null || config.kcs().offlineToken().isBlank()) {
             return buildFallbackResponse(query, searchUrl);
         }
 
-        // TODO Fase 5: implementar búsqueda real via Customer Portal API
-        // Por ahora retorna fallback aunque haya token
+        // TODO Phase 5: implement real Customer Portal API search
+        // For now, return fallback even when a token is present
         return buildFallbackResponse(query, searchUrl);
     }
 
     private String buildFallbackResponse(String query, String searchUrl) {
         return String.format(
-                "KCS Search for: \"%s\"\n\n" +
+                "KCS search for: \"%s\"\n\n" +
                 "Open this URL to find relevant Red Hat solutions:\n%s\n\n" +
-                "Suggested search terms for AMQ Streams issues:\n" +
+                "Suggested additional search terms:\n" +
                 "- site:access.redhat.com amq streams %s\n" +
                 "- site:access.redhat.com strimzi %s",
                 query, searchUrl,

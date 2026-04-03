@@ -11,6 +11,16 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * Kubernetes / OCP tool for live cluster inspection.
+ *
+ * Executes oc commands via ProcessBuilder inside the pod.
+ * The pod's ServiceAccount (kafka-diag-sa) must have ClusterRole
+ * kafka-diag-reader with read access to all Strimzi resources.
+ *
+ * All methods are annotated with @Tool so LangChain4j can call them
+ * automatically based on the agent's reasoning.
+ */
 @ApplicationScoped
 public class KubernetesTool {
 
@@ -54,12 +64,12 @@ public class KubernetesTool {
                 "--sort-by", ".lastTimestamp");
     }
 
-    @Tool("Get all pods in a namespace with their status. Useful to check if Kafka broker/zookeeper pods are running.")
+    @Tool("Get all pods in a namespace with their status. Useful to check if Kafka broker or ZooKeeper pods are running.")
     public String getPods(String namespace) {
         return runOc("get", "pods", "-n", namespace, "-o", "wide");
     }
 
-    @Tool("Get logs of a specific pod in a namespace. Use to inspect broker errors, connector failures, etc.")
+    @Tool("Get the last 100 log lines of a specific pod. Use to inspect broker errors, connector failures, etc.")
     public String getPodLogs(String namespace, String podName) {
         return runOc("logs", podName, "-n", namespace, "--tail=100");
     }
@@ -69,15 +79,16 @@ public class KubernetesTool {
         return runOc("describe", resourceType, resourceName, "-n", namespace);
     }
 
-    @Tool("List all namespaces in the cluster that contain Kafka resources. Useful when the user does not specify a namespace.")
+    @Tool("List all namespaces in the cluster that contain Kafka resources. Use when the user does not specify a namespace.")
     public String listNamespacesWithKafka() {
         return runOc("get", "kafka", "--all-namespaces", "-o",
                 "custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[0].status");
     }
 
     // ----------------------------------------------------------------
-    // Internal executor
+    // Internal command executor
     // ----------------------------------------------------------------
+
     private String runOc(String... args) {
         List<String> cmd = new ArrayList<>();
         cmd.add("oc");

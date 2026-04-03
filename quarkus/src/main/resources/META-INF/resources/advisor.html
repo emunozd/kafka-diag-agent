@@ -96,11 +96,9 @@
       transition: border-color 0.2s;
     }
 
-    .field input:focus {
-      border-color: #ee0000;
-    }
+    .field input:focus { border-color: #ee0000; }
 
-    .field.ns { width: 200px; }
+    .field.namespace-field { width: 200px; }
 
     textarea {
       width: 100%;
@@ -118,7 +116,6 @@
     }
 
     textarea:focus { border-color: #ee0000; }
-
     textarea::placeholder { color: #555; }
 
     .btn-primary {
@@ -177,10 +174,7 @@
       justify-content: space-between;
     }
 
-    .response-header span {
-      font-size: 12px;
-      color: #8a8a8a;
-    }
+    .response-header span { font-size: 12px; color: #8a8a8a; }
 
     .ns-badge {
       background: #2a2a2a;
@@ -238,6 +232,9 @@
       color: #555;
       border-top: 1px solid #2a2a2a;
     }
+
+    footer a { color: #666; text-decoration: none; }
+    footer a:hover { color: #aaa; }
   </style>
 </head>
 <body>
@@ -245,22 +242,25 @@
 <header>
   <span class="rh-logo">RH</span>
   <h1>Kafka Diagnostic Agent</h1>
-  <span>AMQ Streams · Powered by Qwen3-8B + RAG</span>
+  <span>AMQ Streams &middot; Powered by Qwen3-8B + RAG</span>
 </header>
 
 <main>
   <div class="input-section">
     <div class="field">
       <label>Your question</label>
-      <textarea id="question" placeholder="why is mirrormaker not working&#10;how is my current architecture&#10;analyze any issue in my environment&#10;why do we have consumer lag"></textarea>
+      <textarea id="question"
+        placeholder="why is mirrormaker not working&#10;how is my current kafka architecture&#10;analyze any issues in my environment&#10;why do we have consumer lag"></textarea>
     </div>
 
     <div class="input-row">
-      <div class="field ns">
+      <div class="field namespace-field">
         <label>Namespace (optional)</label>
         <input type="text" id="namespace" placeholder="my-kafka-ns">
       </div>
-      <button class="btn-primary" id="submitBtn" onclick="diagnose()">Diagnose</button>
+      <button class="btn-primary" id="submitBtn" onclick="diagnose()">
+        Diagnose
+      </button>
     </div>
 
     <div class="examples">
@@ -286,7 +286,8 @@
 </main>
 
 <footer>
-  Kafka Diagnostic Agent · Red Hat AMQ Streams · <a href="https://github.com/emunozd/kafka-diag-agent" style="color:#666">GitHub</a>
+  Kafka Diagnostic Agent &middot; Red Hat AMQ Streams &middot;
+  <a href="https://github.com/emunozd/kafka-diag-agent" target="_blank">GitHub</a>
 </footer>
 
 <script>
@@ -307,25 +308,18 @@
     var btn = document.getElementById('submitBtn');
     var section = document.getElementById('responseSection');
     var body = document.getElementById('responseBody');
-    var label = document.getElementById('responseLabel');
     var badge = document.getElementById('nsBadge');
 
     btn.disabled = true;
     section.classList.add('visible');
     body.className = 'response-body loading';
     body.innerHTML = '<span class="spinner"></span>Analyzing your Kafka cluster...';
-    label.textContent = 'Diagnosis result';
     badge.textContent = namespace || 'default namespace';
-
-    var payload = JSON.stringify({
-      question: question,
-      namespace: namespace || null
-    });
 
     fetch('/api/diagnose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: payload
+      body: JSON.stringify({ question: question, namespace: namespace || null })
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
@@ -354,10 +348,9 @@
     });
   }
 
+  // Submit on Ctrl+Enter
   document.getElementById('question').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && e.ctrlKey) {
-      diagnose();
-    }
+    if (e.key === 'Enter' && e.ctrlKey) { diagnose(); }
   });
 </script>
 

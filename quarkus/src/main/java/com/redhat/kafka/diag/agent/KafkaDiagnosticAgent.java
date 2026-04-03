@@ -11,6 +11,16 @@ import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.RegisterAiService;
 import jakarta.enterprise.context.ApplicationScoped;
 
+/**
+ * Main diagnostic agent powered by LangChain4j.
+ *
+ * The agent receives a natural language question, reasons about which tools to
+ * call, gathers live cluster data, enriches results with RAG documentation,
+ * and returns a structured diagnosis with findings and recommendations.
+ *
+ * Tool calling requires the vLLM ServingRuntime to have:
+ *   --enable-auto-tool-choice --tool-call-parser=hermes
+ */
 @RegisterAiService(tools = {
         KubernetesTool.class,
         StrimziReportTool.class,

@@ -18,6 +18,18 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * Strimzi diagnostic report tool.
+ *
+ * Downloads and executes the official Strimzi report.sh script against a
+ * given namespace. The script collects comprehensive diagnostics including
+ * all Kafka resources, operator logs, pod states, and events.
+ *
+ * The script is downloaded once and cached in /tmp for 1 hour to avoid
+ * redundant network calls during the same session.
+ *
+ * Output is truncated to 8000 characters to stay within the LLM context window.
+ */
 @ApplicationScoped
 public class StrimziReportTool {
 
@@ -25,6 +37,7 @@ public class StrimziReportTool {
     private static final String REPORT_URL =
             "https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/refs/heads/main/tools/report.sh";
     private static final int TIMEOUT_SECONDS = 120;
+    private static final int MAX_OUTPUT_CHARS = 8000;
 
     @Tool("Run the official Strimzi diagnostic report script against a namespace. " +
           "Returns a comprehensive report of all Kafka-related resources, logs and status. " +
@@ -38,17 +51,17 @@ public class StrimziReportTool {
         } catch (Exception e) {
             LOG.errorf(e, "Failed to run Strimzi report");
             return "ERROR running Strimzi report: " + e.getMessage() +
-                   "\nTry running manually: curl -s " + REPORT_URL + " | bash -s -- -n " + namespace;
+                   "\nRun manually: curl -s " + REPORT_URL + " | bash -s -- -n " + namespace;
         }
     }
 
     private Path downloadReportScript() throws Exception {
         Path scriptPath = Path.of("/tmp/strimzi-report.sh");
 
-        // Si ya existe y tiene menos de 1 hora, reutilizarlo
+        // Reuse cached script if it is less than 1 hour old
         if (Files.exists(scriptPath)) {
-            long age = System.currentTimeMillis() - Files.getLastModifiedTime(scriptPath).toMillis();
-            if (age < 3600_000L) {
+            long ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(scriptPath).toMillis();
+            if (ageMillis < 3_600_000L) {
                 return scriptPath;
             }
         }
@@ -77,9 +90,7 @@ public class StrimziReportTool {
     }
 
     private String executeReport(Path scriptPath, String namespace) throws Exception {
-        ProcessBuilder pb = new ProcessBuilder(
-                "bash", scriptPath.toString(), "-n", namespace
-        );
+        ProcessBuilder pb = new ProcessBuilder("bash", scriptPath.toString(), "-n", namespace);
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
@@ -93,12 +104,14 @@ public class StrimziReportTool {
                 .lines()
                 .collect(Collectors.joining("\n"));
 
-        // El reporte puede ser muy largo — truncar para no consumir todo el contexto
-        if (output.length() > 8000) {
-            output = output.substring(0, 8000) +
-                     "\n\n[REPORT TRUNCATED — showing first 8000 chars]";
+        // Truncate to avoid consuming the entire LLM context window
+        if (output.length() > MAX_OUTPUT_CHARS) {
+            output = output.substring(0, MAX_OUTPUT_CHARS) +
+                     "\n\n[REPORT TRUNCATED — showing first " + MAX_OUTPUT_CHARS + " characters]";
         }
 
-        return output.isBlank() ? "Report produced no output for namespace: " + namespace : output;
+        return output.isBlank()
+                ? "Report produced no output for namespace: " + namespace
+                : output;
     }
 }

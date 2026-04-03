@@ -1,3 +1,9 @@
+# ChromaDB deployment with both PVCs mounted:
+# - pvc-vector-store → /chroma/data (embeddings persistence)
+# - pvc-pdf-knowledge → /pdfdata (PDF files, organized by version subfolder)
+#
+# Uses kafka-diag-sa with anyuid SCC to write to both PVCs.
+# PDF PVC is mounted permanently so PDFs can be uploaded at any time via oc cp.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -3,6 +3,10 @@ package com.redhat.kafka.diag.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+/**
+ * Typed configuration mapping for the kafka-diag-agent application.
+ * All values are injected from environment variables via OCP Secrets.
+ */
 @ConfigMapping(prefix = "kafka.diag")
 public interface AgentConfig {
 
@@ -14,6 +18,9 @@ public interface AgentConfig {
     @WithDefault("kafka-diag-agent")
     String defaultNamespace();
 
+    /**
+     * Embedding service configuration (nomic-embed-text-v1.5 via vLLM CPU).
+     */
     interface Embed {
         @WithDefault("http://nomic-embed-svc.kafka-diag-agent.svc.cluster.local:8000/v1")
         String baseUrl();
@@ -22,6 +29,10 @@ public interface AgentConfig {
         String modelName();
     }
 
+    /**
+     * ChromaDB vector store configuration.
+     * Note: ChromaDB uses API v2 — /api/v1/ is deprecated.
+     */
     interface Chroma {
         @WithDefault("http://chromadb.kafka-diag-agent.svc.cluster.local:8000")
         String baseUrl();
@@ -33,11 +44,19 @@ public interface AgentConfig {
         int topK();
     }
 
+    /**
+     * PDF knowledge base path. Organized by version subfolders:
+     * /pdfdata/streams-3.1/, /pdfdata/streams-3.2/, etc.
+     */
     interface Pdf {
         @WithDefault("/pdfdata")
         String basePath();
     }
 
+    /**
+     * Red Hat KCS (Knowledge Centered Support) configuration.
+     * If offlineToken is empty, the KCS tool uses fallback mode (search URL).
+     */
     interface Kcs {
         @WithDefault("")
         String offlineToken();

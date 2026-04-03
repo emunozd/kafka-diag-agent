@@ -1,4 +1,7 @@
 {{- if .Values.llm.local }}
+# LLM ServingRuntime — GPU (CUDA 13.0)
+# Uses rhaiis/vllm-cuda-rhel9:3.3.0 which supports CUDA 13.0 (RTX 5060 Ti / Blackwell)
+# --enable-auto-tool-choice and --tool-call-parser=hermes are required for Qwen3 tool calling
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
@@ -46,6 +49,10 @@ spec:
         sizeLimit: 2Gi
       name: shm
 ---
+# Embeddings ServingRuntime — CPU only
+# Uses rhaiis/vllm-cpu-rhel9:3.3.0 (CPU-specific image, separate from GPU)
+# --trust-remote-code is required for nomic-embed-text-v1.5
+# Do NOT add --task=embed or --device=cpu — invalid flags in this version
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:

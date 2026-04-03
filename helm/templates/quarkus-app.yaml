@@ -1,4 +1,6 @@
 {{- if .Values.app.buildConfig.enabled }}
+# S2I BuildConfig — builds the Quarkus app from the GitHub repository
+# contextDir points to the quarkus/ folder which contains pom.xml
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
@@ -57,13 +59,13 @@ spec:
           ports:
             - containerPort: {{ .Values.app.port }}
           env:
-            # Namespace donde corre la app — usado como default si el usuario no especifica
+            # Default namespace — used when user does not specify one
             - name: APP_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
             {{- if .Values.llm.local }}
-            # Modo local — apunta a los InferenceServices en OCP
+            # Local mode — points to the InferenceServices running on OCP
             - name: LLM_BASE_URL
               value: "http://qwen3-8b-llm-predictor.{{ .Values.namespace }}.svc.cluster.local:8000/v1"
             - name: LLM_API_KEY
@@ -75,7 +77,7 @@ spec:
             - name: EMBED_MODEL_NAME
               value: "/mnt/models"
             {{- else }}
-            # Modo externo — credenciales desde Secret
+            # External mode — credentials injected from Secret
             - name: LLM_BASE_URL
               valueFrom:
                 secretKeyRef:
@@ -96,13 +98,13 @@ spec:
             - name: EMBED_MODEL_NAME
               value: "none"
             {{- end }}
-            # ChromaDB — siempre local
+            # ChromaDB — always local
             - name: CHROMA_BASE_URL
               value: "http://chromadb.{{ .Values.namespace }}.svc.cluster.local:8000"
-            # PDF path
+            # PDF base path — matches the mount in the ChromaDB and app pods
             - name: PDF_BASE_PATH
               value: "/pdfdata"
-            # KCS token opcional
+            # KCS token — optional, enables Red Hat Knowledge Base search
             - name: RH_OFFLINE_TOKEN
               valueFrom:
                 secretKeyRef:
