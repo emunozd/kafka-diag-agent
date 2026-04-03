@@ -5,9 +5,11 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.RandomAccessReadBufferedFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.jboss.logging.Logger;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -203,8 +205,7 @@ public class PDFIndexer {
     private List<PageText> extractTextFromPdf(File file) throws IOException {
         List<PageText> pages = new ArrayList<>();
 
-        try (java.io.InputStream is = new java.io.FileInputStream(file);
-        PDDocument doc = PDDocument.load(is)) {
+        try (PDDocument doc = Loader.loadPDF(new RandomAccessReadBufferedFile(file))) {
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
 
