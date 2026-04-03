@@ -155,13 +155,13 @@ public class ChromaDBClient {
      */
     public void saveFileHash(String filename, String sha256) throws ChromaException {
         String colId = ensureCollection();
-        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/upsert";
-
+        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/add";
         String id = "__sha256::" + filename;
+        // ChromaDB 1.0.0 requires embeddings even for metadata-only documents
+        // Use a zero vector of dimension 1 as placeholder
         String body = String.format(
-                "{\"ids\":[\"%s\"],\"documents\":[\"%s\"],\"metadatas\":[{\"type\":\"sha256\"}]}",
+                "{\"ids\":[\"%s\"],\"embeddings\":[[0.0]],\"documents\":[\"%s\"],\"metadatas\":[{\"type\":\"sha256\"}]}",
                 escapeJson(id), sha256);
-
         post(url, body);
     }
 

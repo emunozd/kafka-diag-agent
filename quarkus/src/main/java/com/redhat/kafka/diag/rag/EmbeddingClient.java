@@ -32,7 +32,7 @@ public class EmbeddingClient {
 
     @Inject
     AgentConfig config;
-    
+
     private String embeddingsUrl;
 
     @PostConstruct
@@ -52,7 +52,7 @@ public class EmbeddingClient {
         if (text == null || text.isBlank()) {
             throw new EmbeddingException("Input text must not be blank");
         }
-        String truncated = text.length() > 2000 ? text.substring(0, 2000) : text;
+        String truncated = text.length() > 1500 ? text.substring(0, 1500) : text;
         String requestBody = buildRequestBody(truncated);
     
         try {
