@@ -52,7 +52,7 @@ public class EmbeddingClient {
         if (text == null || text.isBlank()) {
             throw new EmbeddingException("Input text must not be blank");
         }
-        String truncated = text.length() > 1500 ? text.substring(0, 1500) : text;
+        String truncated = text.length() > 900 ? text.substring(0, 900) : text;
         String requestBody = buildRequestBody(truncated);
     
         try {

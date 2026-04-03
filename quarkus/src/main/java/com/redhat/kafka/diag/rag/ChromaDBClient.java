@@ -157,11 +157,16 @@ public class ChromaDBClient {
         String colId = ensureCollection();
         String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/add";
         String id = "__sha256::" + filename;
-        // ChromaDB 1.0.0 requires embeddings even for metadata-only documents
-        // Use a zero vector of dimension 1 as placeholder
+        // Build a zero vector of 768 dimensions to match the collection's embedding dimension
+        StringBuilder zeroVector = new StringBuilder("[");
+        for (int i = 0; i < 768; i++) {
+            if (i > 0) zeroVector.append(",");
+            zeroVector.append("0.0");
+        }
+        zeroVector.append("]");
         String body = String.format(
-                "{\"ids\":[\"%s\"],\"embeddings\":[[0.0]],\"documents\":[\"%s\"],\"metadatas\":[{\"type\":\"sha256\"}]}",
-                escapeJson(id), sha256);
+                "{\"ids\":[\"%s\"],\"embeddings\":[%s],\"documents\":[\"%s\"],\"metadatas\":[{\"type\":\"sha256\"}]}",
+                escapeJson(id), zeroVector, sha256);
         post(url, body);
     }
 
