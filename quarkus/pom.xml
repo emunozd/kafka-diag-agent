@@ -16,7 +16,7 @@
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
     <quarkus.platform.version>3.15.1</quarkus.platform.version>
-    <langchain4j.version>0.36.2</langchain4j.version>
+    <langchain4j.version>1.8.4</langchain4j.version>
     <skipITs>true</skipITs>
   </properties>
 
@@ -48,6 +48,14 @@
       <groupId>io.quarkiverse.langchain4j</groupId>
       <artifactId>quarkus-langchain4j-openai</artifactId>
       <version>${langchain4j.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkiverse.langchain4j</groupId>
+      <artifactId>quarkus-langchain4j-bom</artifactId>
+      <version>${langchain4j.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
     </dependency>
 
     <!-- Web UI -->
