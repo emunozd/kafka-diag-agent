@@ -41,6 +41,7 @@ public class ChromaDBClient {
 
     // Cached collection ID to avoid repeated lookups
     private volatile String collectionId;
+    private static final String COLLECTIONS_BASE = "/api/v2/tenants/default_tenant/databases/default_database/collections";
 
     @PostConstruct
     void init() {
@@ -80,14 +81,14 @@ public class ChromaDBClient {
     }
 
     private String getCollectionId() throws ChromaException {
-        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections/" + collectionName;
+        String url = baseUrl + COLLECTIONS_BASE + "/" + collectionName;
         String response = get(url);
         return extractJsonField(response, "id");
     }
 
     private String createCollection() throws ChromaException {
         // ChromaDB v2 requires tenant and database in the path
-        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections";
+        String url = baseUrl + COLLECTIONS_BASE;
         String body = String.format(
                 "{\"name\":\"%s\",\"metadata\":{\"description\":\"Kafka diagnostic knowledge base\"}}",
                 collectionName);
@@ -113,7 +114,7 @@ public class ChromaDBClient {
         }
 
         String colId = ensureCollection();
-        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections/" + colId + "/upsert";
+        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/upsert";
 
         // Build the upsert request body
         StringBuilder ids        = new StringBuilder("[");
@@ -154,7 +155,7 @@ public class ChromaDBClient {
      */
     public void saveFileHash(String filename, String sha256) throws ChromaException {
         String colId = ensureCollection();
-        String url = baseUrl + "/api/v2/collections/" + colId + "/upsert";
+        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/upsert";
 
         String id = "__sha256::" + filename;
         String body = String.format(
@@ -170,7 +171,7 @@ public class ChromaDBClient {
      */
     public String getFileHash(String filename) throws ChromaException {
         String colId = ensureCollection();
-        String url = baseUrl + "/api/v2/collections/" + colId + "/get";
+        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/get";
 
         String id = "__sha256::" + filename;
         String body = String.format("{\"ids\":[\"%s\"]}", escapeJson(id));
@@ -203,7 +204,7 @@ public class ChromaDBClient {
      */
     public List<SearchResult> query(float[] queryVector, int topK) throws ChromaException {
         String colId = ensureCollection();
-        String url = baseUrl + "/api/v2/collections/" + colId + "/query";
+        String url = baseUrl + COLLECTIONS_BASE + "/" + colId + "/query";
 
         String body = String.format(
                 "{\"query_embeddings\":[%s],\"n_results\":%d,\"include\":[\"documents\",\"metadatas\",\"distances\"]}",
