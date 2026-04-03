@@ -25,16 +25,8 @@
       gap: 12px;
     }
 
-    header h1 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #ffffff;
-    }
-
-    header span {
-      font-size: 13px;
-      color: #8a8a8a;
-    }
+    header h1 { font-size: 20px; font-weight: 600; color: #fff; }
+    header span { font-size: 13px; color: #8a8a8a; }
 
     .rh-logo {
       color: #ee0000;
@@ -56,6 +48,42 @@
       gap: 20px;
     }
 
+    /* Mode tabs */
+    .mode-tabs {
+      display: flex;
+      gap: 0;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      overflow: hidden;
+      width: fit-content;
+    }
+
+    .mode-tab {
+      background: #2a2a2a;
+      border: none;
+      color: #8a8a8a;
+      padding: 8px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-right: 1px solid #3a3a3a;
+    }
+
+    .mode-tab:last-child { border-right: none; }
+
+    .mode-tab.active {
+      background: #ee0000;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .mode-tab:hover:not(.active) { background: #333; color: #f0f0f0; }
+
+    /* Panels */
+    .panel { display: none; }
+    .panel.visible { display: block; }
+
+    /* Input section */
     .input-section {
       background: #1f1f1f;
       border: 1px solid #3a3a3a;
@@ -64,12 +92,6 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-    }
-
-    .input-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-end;
     }
 
     .field {
@@ -85,39 +107,66 @@
       letter-spacing: 0.5px;
     }
 
-    .field input {
+    .field input, .field textarea {
       background: #2a2a2a;
       border: 1px solid #3a3a3a;
       border-radius: 4px;
       color: #f0f0f0;
       padding: 8px 12px;
       font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .field input:focus { border-color: #ee0000; }
-
-    .field.namespace-field { width: 200px; }
-
-    textarea {
-      width: 100%;
-      background: #2a2a2a;
-      border: 1px solid #3a3a3a;
-      border-radius: 4px;
-      color: #f0f0f0;
-      padding: 10px 12px;
-      font-size: 14px;
       font-family: inherit;
-      resize: vertical;
-      min-height: 80px;
       outline: none;
       transition: border-color 0.2s;
     }
 
-    textarea:focus { border-color: #ee0000; }
-    textarea::placeholder { color: #555; }
+    .field input:focus, .field textarea:focus { border-color: #ee0000; }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field textarea::placeholder { color: #555; }
+    .field.ns-field { width: 220px; }
 
+    .input-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    /* Upload area */
+    .upload-area {
+      border: 2px dashed #3a3a3a;
+      border-radius: 6px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #ee0000;
+      background: rgba(238,0,0,0.04);
+    }
+
+    .upload-area input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-area .upload-icon { font-size: 28px; margin-bottom: 8px; }
+
+    .upload-area p {
+      color: #8a8a8a;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .upload-area.loaded { border-color: #2ecc71; background: rgba(46,204,113,0.04); }
+    .upload-area.loaded p { color: #2ecc71; }
+
+    /* Buttons */
     .btn-primary {
       background: #ee0000;
       color: white;
@@ -134,11 +183,22 @@
     .btn-primary:hover { background: #cc0000; }
     .btn-primary:disabled { background: #555; cursor: not-allowed; }
 
-    .examples {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+    .btn-secondary {
+      background: none;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      color: #aaa;
+      padding: 10px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
     }
+
+    .btn-secondary:hover { border-color: #666; color: #f0f0f0; }
+
+    /* Examples */
+    .examples { display: flex; flex-wrap: wrap; gap: 8px; }
 
     .example-btn {
       background: #2a2a2a;
@@ -151,11 +211,24 @@
       transition: all 0.2s;
     }
 
-    .example-btn:hover {
-      border-color: #ee0000;
-      color: #f0f0f0;
+    .example-btn:hover { border-color: #ee0000; color: #f0f0f0; }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
     }
 
+    .status-badge.live { background: rgba(46,204,113,0.15); color: #2ecc71; border: 1px solid #2ecc71; }
+    .status-badge.report { background: rgba(52,152,219,0.15); color: #3498db; border: 1px solid #3498db; }
+    .status-badge.dot::before { content: '●'; font-size: 8px; }
+
+    /* Response section */
     .response-section {
       background: #1f1f1f;
       border: 1px solid #3a3a3a;
@@ -172,9 +245,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
     }
 
-    .response-header span { font-size: 12px; color: #8a8a8a; }
+    .response-header-left { display: flex; align-items: center; gap: 10px; }
 
     .ns-badge {
       background: #2a2a2a;
@@ -193,10 +268,7 @@
       word-break: break-word;
     }
 
-    .response-body.loading {
-      color: #666;
-      font-style: italic;
-    }
+    .response-body.loading { color: #666; font-style: italic; }
 
     .spinner {
       display: inline-block;
@@ -242,47 +314,98 @@
 <header>
   <span class="rh-logo">RH</span>
   <h1>Kafka Diagnostic Agent</h1>
-  <span>AMQ Streams &middot; Powered by Qwen3-8B + RAG</span>
+  <span>AMQ Streams &middot; Qwen3-8B + RAG</span>
 </header>
 
 <main>
-  <div class="input-section">
-    <div class="field">
-      <label>Your question</label>
-      <textarea id="question"
-        placeholder="why is mirrormaker not working&#10;how is my current kafka architecture&#10;analyze any issues in my environment&#10;why do we have consumer lag"></textarea>
-    </div>
 
-    <div class="input-row">
-      <div class="field namespace-field">
-        <label>Namespace (optional)</label>
-        <input type="text" id="namespace" placeholder="my-kafka-ns">
+  <!-- Mode selector -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tabLive" onclick="switchMode('live')">
+      &#x2601; Live Cluster
+    </button>
+    <button class="mode-tab" id="tabReport" onclick="switchMode('report')">
+      &#x1F4C4; Uploaded Report
+    </button>
+  </div>
+
+  <!-- Live cluster panel -->
+  <div class="panel visible" id="panelLive">
+    <div class="input-section">
+      <div class="field">
+        <label>Your question</label>
+        <textarea id="questionLive"
+          placeholder="why is mirrormaker not working&#10;how is my current kafka architecture&#10;why do we have consumer lag&#10;analyze any issues in my environment"></textarea>
       </div>
-      <button class="btn-primary" id="submitBtn" onclick="diagnose()">
-        Diagnose
-      </button>
-    </div>
-
-    <div class="examples">
-      <button class="example-btn" onclick="setQuestion('why is mirrormaker not working')">MirrorMaker issue</button>
-      <button class="example-btn" onclick="setQuestion('how is my current kafka architecture')">Architecture overview</button>
-      <button class="example-btn" onclick="setQuestion('why do we have consumer lag')">Consumer lag</button>
-      <button class="example-btn" onclick="setQuestion('analyze any issues in my environment')">Full analysis</button>
-      <button class="example-btn" onclick="setQuestion('how can message consumption be improved')">Improve consumption</button>
-      <button class="example-btn" onclick="setQuestion('give me a brief status of the current cluster')">Cluster status</button>
+      <div class="input-row">
+        <div class="field ns-field">
+          <label>Namespace (optional)</label>
+          <input type="text" id="namespaceLive" placeholder="my-kafka-ns">
+        </div>
+        <button class="btn-primary" id="submitLive" onclick="diagnoseLive()">Diagnose</button>
+      </div>
+      <div class="examples">
+        <button class="example-btn" onclick="setQ('live','why is mirrormaker not working')">MirrorMaker issue</button>
+        <button class="example-btn" onclick="setQ('live','how is my current kafka architecture')">Architecture</button>
+        <button class="example-btn" onclick="setQ('live','why do we have consumer lag')">Consumer lag</button>
+        <button class="example-btn" onclick="setQ('live','analyze any issues in my environment')">Full analysis</button>
+        <button class="example-btn" onclick="setQ('live','how can I tune kafka for better performance')">Tuning</button>
+        <button class="example-btn" onclick="setQ('live','give me a brief status of the current cluster')">Cluster status</button>
+      </div>
     </div>
   </div>
 
+  <!-- Uploaded report panel -->
+  <div class="panel" id="panelReport">
+    <div class="input-section">
+
+      <!-- Upload area -->
+      <div class="field">
+        <label>Strimzi report.sh output</label>
+        <div class="upload-area" id="uploadArea">
+          <input type="file" id="reportFile" accept=".txt,.log,text/plain" onchange="handleFileSelect(event)">
+          <div class="upload-icon">&#x1F4C2;</div>
+          <p id="uploadText">
+            Drop a report.sh output file here<br>
+            or click to browse (.txt or .log)
+          </p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Your question</label>
+        <textarea id="questionReport"
+          placeholder="analyze the uploaded report&#10;what issues do you see in the pods&#10;check the kafka events for errors"></textarea>
+      </div>
+
+      <div class="input-row">
+        <button class="btn-primary" id="submitReport" onclick="diagnoseReport()" disabled>
+          Diagnose from Report
+        </button>
+        <button class="btn-secondary" onclick="clearReport()">Clear report</button>
+      </div>
+
+      <div class="examples">
+        <button class="example-btn" onclick="setQ('report','analyze the uploaded report and summarize findings')">Full analysis</button>
+        <button class="example-btn" onclick="setQ('report','what issues do you see in the pods')">Pod issues</button>
+        <button class="example-btn" onclick="setQ('report','check the kafka events for errors and warnings')">Events</button>
+        <button class="example-btn" onclick="setQ('report','analyze the kafka topics configuration')">Topics</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Response area (shared) -->
   <div class="response-section" id="responseSection">
     <div class="response-header">
-      <span id="responseLabel">Diagnosis result</span>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div class="response-header-left">
+        <span id="modeIndicator" class="status-badge live dot">Live cluster</span>
         <span class="ns-badge" id="nsBadge"></span>
-        <button class="copy-btn" onclick="copyResponse()">Copy</button>
       </div>
+      <button class="copy-btn" onclick="copyResponse()">Copy</button>
     </div>
     <div class="response-body" id="responseBody"></div>
   </div>
+
 </main>
 
 <footer>
@@ -291,52 +414,177 @@
 </footer>
 
 <script>
-  function setQuestion(text) {
-    document.getElementById('question').value = text;
-    document.getElementById('question').focus();
+  var currentMode = 'live';
+  var reportContent = null;
+
+  // ----------------------------------------------------------------
+  // Mode switching
+  // ----------------------------------------------------------------
+  function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('tabLive').className = 'mode-tab' + (mode === 'live' ? ' active' : '');
+    document.getElementById('tabReport').className = 'mode-tab' + (mode === 'report' ? ' active' : '');
+    document.getElementById('panelLive').className = 'panel' + (mode === 'live' ? ' visible' : '');
+    document.getElementById('panelReport').className = 'panel' + (mode === 'report' ? ' visible' : '');
   }
 
-  function diagnose() {
-    var question = document.getElementById('question').value.trim();
-    var namespace = document.getElementById('namespace').value.trim();
+  // ----------------------------------------------------------------
+  // Example questions
+  // ----------------------------------------------------------------
+  function setQ(mode, text) {
+    switchMode(mode);
+    document.getElementById(mode === 'live' ? 'questionLive' : 'questionReport').value = text;
+  }
 
-    if (!question) {
-      document.getElementById('question').focus();
-      return;
+  // ----------------------------------------------------------------
+  // File upload handling
+  // ----------------------------------------------------------------
+  function handleFileSelect(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      reportContent = e.target.result;
+      var area = document.getElementById('uploadArea');
+      var text = document.getElementById('uploadText');
+      area.className = 'upload-area loaded';
+      text.textContent = file.name + ' (' + formatSize(reportContent.length) + ') — ready';
+      document.getElementById('submitReport').disabled = false;
+    };
+    reader.readAsText(file);
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function clearReport() {
+    reportContent = null;
+    document.getElementById('reportFile').value = '';
+    document.getElementById('uploadArea').className = 'upload-area';
+    document.getElementById('uploadText').innerHTML =
+      'Drop a report.sh output file here<br>or click to browse (.txt or .log)';
+    document.getElementById('submitReport').disabled = true;
+  }
+
+  // Drag and drop support
+  var uploadArea = document.getElementById('uploadArea');
+  uploadArea.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+  uploadArea.addEventListener('dragleave', function() {
+    uploadArea.classList.remove('dragover');
+  });
+  uploadArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file) {
+      var fakeEvent = { target: { files: [file] } };
+      handleFileSelect(fakeEvent);
     }
+  });
 
-    var btn = document.getElementById('submitBtn');
-    var section = document.getElementById('responseSection');
-    var body = document.getElementById('responseBody');
-    var badge = document.getElementById('nsBadge');
+  // ----------------------------------------------------------------
+  // Live cluster diagnosis
+  // ----------------------------------------------------------------
+  function diagnoseLive() {
+    var question  = document.getElementById('questionLive').value.trim();
+    var namespace = document.getElementById('namespaceLive').value.trim();
+    if (!question) { document.getElementById('questionLive').focus(); return; }
 
-    btn.disabled = true;
-    section.classList.add('visible');
-    body.className = 'response-body loading';
-    body.innerHTML = '<span class="spinner"></span>Analyzing your Kafka cluster...';
-    badge.textContent = namespace || 'default namespace';
+    showLoading('Live cluster', namespace || 'default namespace', false);
 
     fetch('/api/diagnose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: question, namespace: namespace || null })
     })
-    .then(function(res) { return res.json(); })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
-      btn.disabled = false;
-      body.className = 'response-body';
-      if (data.error) {
-        body.textContent = 'Error: ' + data.error;
-      } else {
-        body.textContent = data.answer;
-        badge.textContent = data.namespace || namespace || 'default namespace';
-      }
+      showResult(data.answer || ('Error: ' + data.error), namespace || 'default namespace', false);
+      document.getElementById('submitLive').disabled = false;
     })
     .catch(function(err) {
-      btn.disabled = false;
-      body.className = 'response-body';
-      body.textContent = 'Connection error: ' + err.message;
+      showResult('Connection error: ' + err.message, namespace || 'default namespace', false);
+      document.getElementById('submitLive').disabled = false;
     });
+  }
+
+  // ----------------------------------------------------------------
+  // Report-based diagnosis
+  // ----------------------------------------------------------------
+  function diagnoseReport() {
+    var question = document.getElementById('questionReport').value.trim();
+    if (!question) { document.getElementById('questionReport').focus(); return; }
+    if (!reportContent) { alert('Please upload a report file first.'); return; }
+
+    showLoading('Uploaded report', 'from report', true);
+
+    // Step 1: upload the report content
+    fetch('/api/upload-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: reportContent
+    })
+    .then(function(r) {
+      if (!r.ok) { throw new Error('Upload failed: ' + r.status); }
+      return r.json();
+    })
+    .then(function() {
+      // Step 2: diagnose using the uploaded report
+      return fetch('/api/diagnose-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: question, namespace: null })
+      });
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      showResult(data.answer || ('Error: ' + data.error), 'from report', true);
+      document.getElementById('submitReport').disabled = false;
+    })
+    .catch(function(err) {
+      showResult('Error: ' + err.message, 'from report', true);
+      document.getElementById('submitReport').disabled = false;
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // UI helpers
+  // ----------------------------------------------------------------
+  function showLoading(source, ns, fromReport) {
+    var btn = document.getElementById(fromReport ? 'submitReport' : 'submitLive');
+    btn.disabled = true;
+
+    var section  = document.getElementById('responseSection');
+    var body     = document.getElementById('responseBody');
+    var badge    = document.getElementById('nsBadge');
+    var indicator = document.getElementById('modeIndicator');
+
+    section.className = 'response-section visible';
+    body.className = 'response-body loading';
+    body.innerHTML = '<span class="spinner"></span>Analyzing...';
+    badge.textContent = ns;
+
+    if (fromReport) {
+      indicator.className = 'status-badge report dot';
+      indicator.textContent = 'Uploaded report';
+    } else {
+      indicator.className = 'status-badge live dot';
+      indicator.textContent = 'Live cluster';
+    }
+  }
+
+  function showResult(text, ns, fromReport) {
+    var body  = document.getElementById('responseBody');
+    var badge = document.getElementById('nsBadge');
+    body.className = 'response-body';
+    body.textContent = text;
+    badge.textContent = ns;
   }
 
   function copyResponse() {
@@ -348,9 +596,12 @@
     });
   }
 
-  // Submit on Ctrl+Enter
-  document.getElementById('question').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && e.ctrlKey) { diagnose(); }
+  // Ctrl+Enter to submit
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      if (currentMode === 'live') diagnoseLive();
+      else diagnoseReport();
+    }
   });
 </script>
 
