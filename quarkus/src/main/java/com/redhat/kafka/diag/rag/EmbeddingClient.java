@@ -105,19 +105,34 @@ public class EmbeddingClient {
     // ----------------------------------------------------------------
 
     private String buildRequestBody(String text) {
-        // Escape special characters in the text for JSON
-        String escaped = text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-
-        return String.format(
-                "{\"model\":\"%s\",\"input\":\"%s\"}",
-                config.embed().modelName(),
-                escaped
-        );
+        // Use Jackson ObjectMapper-style manual escaping to guarantee valid JSON
+        // Cannot use ObjectMapper directly to avoid adding dependency
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"model\":\"");
+        sb.append(config.embed().modelName());
+        sb.append("\",\"input\":[\"");
+        // Escape all special characters properly
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"'  -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default   -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        sb.append("\"]}");
+        return sb.toString();
     }
 
     @SuppressWarnings("unchecked")

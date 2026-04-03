@@ -80,13 +80,14 @@ public class ChromaDBClient {
     }
 
     private String getCollectionId() throws ChromaException {
-        String url = baseUrl + "/api/v2/collections/" + collectionName;
+        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections/" + collectionName;
         String response = get(url);
         return extractJsonField(response, "id");
     }
 
     private String createCollection() throws ChromaException {
-        String url = baseUrl + "/api/v2/collections";
+        // ChromaDB v2 requires tenant and database in the path
+        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections";
         String body = String.format(
                 "{\"name\":\"%s\",\"metadata\":{\"description\":\"Kafka diagnostic knowledge base\"}}",
                 collectionName);
@@ -112,7 +113,7 @@ public class ChromaDBClient {
         }
 
         String colId = ensureCollection();
-        String url = baseUrl + "/api/v2/collections/" + colId + "/upsert";
+        String url = baseUrl + "/api/v2/tenants/default_tenant/databases/default_database/collections/" + colId + "/upsert";
 
         // Build the upsert request body
         StringBuilder ids        = new StringBuilder("[");
