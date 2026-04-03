@@ -58,7 +58,7 @@ public interface AgentConfig {
      * If offlineToken is empty, the KCS tool uses fallback mode (search URL).
      */
     interface Kcs {
-        @WithDefault("")
+        @WithDefault(none)
         String offlineToken();
 
         @WithDefault("https://access.redhat.com/search/#/?q={query}&documentKind=Solution")

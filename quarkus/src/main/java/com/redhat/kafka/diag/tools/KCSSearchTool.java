@@ -39,7 +39,7 @@ public class KCSSearchTool {
         String searchUrl = config.kcs().searchUrl().replace("{query}", encodedQuery);
 
         // If no token is configured, use fallback mode directly
-        if (config.kcs().offlineToken() == null || config.kcs().offlineToken().isBlank()) {
+        if (config.kcs().offlineToken() == null || config.kcs().offlineToken().isBlank() || "none".equals(config.kcs().offlineToken())) {
             return buildFallbackResponse(query, searchUrl);
         }
 
