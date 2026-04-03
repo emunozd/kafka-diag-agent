@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chromadb
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chromadb
+  template:
+    metadata:
+      labels:
+        app: chromadb
+    spec:
+      serviceAccountName: kafka-diag-sa
+      containers:
+        - name: chromadb
+          image: {{ .Values.chromadb.image }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: IS_PERSISTENT
+              value: "TRUE"
+            - name: PERSIST_DIRECTORY
+              value: /chroma/data
+            - name: ALLOW_RESET
+              value: "TRUE"
+          volumeMounts:
+            - name: vector-store
+              mountPath: /chroma/data
+            - name: pdfs
+              mountPath: /pdfdata
+          resources:
+            limits:
+              memory: {{ .Values.chromadb.memoryLimit }}
+              cpu: {{ .Values.chromadb.cpuLimit | quote }}
+            requests:
+              memory: {{ .Values.chromadb.memoryRequest }}
+              cpu: {{ .Values.chromadb.cpuRequest | quote }}
+      volumes:
+        - name: vector-store
+          persistentVolumeClaim:
+            claimName: pvc-vector-store
+        - name: pdfs
+          persistentVolumeClaim:
+            claimName: pvc-pdf-knowledge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chromadb
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: chromadb
+  ports:
+    - port: 8000
+      targetPort: 8000

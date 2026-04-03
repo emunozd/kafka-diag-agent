@@ -1,0 +1,153 @@
+{{- if .Values.app.buildConfig.enabled }}
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kafka-diag-agent
+  namespace: {{ .Values.namespace }}
+spec:
+  source:
+    type: Git
+    git:
+      uri: {{ .Values.app.buildConfig.gitRepo }}
+      ref: {{ .Values.app.buildConfig.gitRef }}
+    contextDir: {{ .Values.app.buildConfig.contextDir }}
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        namespace: openshift
+        name: java:latest
+      env:
+        - name: MAVEN_ARGS_APPEND
+          value: "-Dquarkus.package.type=uber-jar"
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kafka-diag-agent:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kafka-diag-agent
+  namespace: {{ .Values.namespace }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-diag-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      app: kafka-diag-app
+  template:
+    metadata:
+      labels:
+        app: kafka-diag-app
+    spec:
+      serviceAccountName: kafka-diag-sa
+      containers:
+        - name: kafka-diag-app
+          image: {{ .Values.app.image }}
+          ports:
+            - containerPort: {{ .Values.app.port }}
+          env:
+            # Namespace donde corre la app — usado como default si el usuario no especifica
+            - name: APP_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if .Values.llm.local }}
+            # Modo local — apunta a los InferenceServices en OCP
+            - name: LLM_BASE_URL
+              value: "http://qwen3-8b-llm-predictor.{{ .Values.namespace }}.svc.cluster.local:8000/v1"
+            - name: LLM_API_KEY
+              value: "none"
+            - name: LLM_MODEL_NAME
+              value: "/mnt/models"
+            - name: EMBED_BASE_URL
+              value: "http://nomic-embed-svc.{{ .Values.namespace }}.svc.cluster.local:8000/v1"
+            - name: EMBED_MODEL_NAME
+              value: "/mnt/models"
+            {{- else }}
+            # Modo externo — credenciales desde Secret
+            - name: LLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: llm-config
+                  key: LLM_BASE_URL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-config
+                  key: LLM_API_KEY
+            - name: LLM_MODEL_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: llm-config
+                  key: LLM_MODEL_NAME
+            - name: EMBED_BASE_URL
+              value: "none"
+            - name: EMBED_MODEL_NAME
+              value: "none"
+            {{- end }}
+            # ChromaDB — siempre local
+            - name: CHROMA_BASE_URL
+              value: "http://chromadb.{{ .Values.namespace }}.svc.cluster.local:8000"
+            # PDF path
+            - name: PDF_BASE_PATH
+              value: "/pdfdata"
+            # KCS token opcional
+            - name: RH_OFFLINE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rh-api-credentials
+                  key: RH_OFFLINE_TOKEN
+                  optional: true
+          volumeMounts:
+            - name: pdfs
+              mountPath: /pdfdata
+              readOnly: true
+          resources:
+            limits:
+              memory: 1Gi
+              cpu: "1"
+            requests:
+              memory: 512Mi
+              cpu: "500m"
+      volumes:
+        - name: pdfs
+          persistentVolumeClaim:
+            claimName: pvc-pdf-knowledge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-diag-app
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: kafka-diag-app
+  ports:
+    - port: 8080
+      targetPort: {{ .Values.app.port }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kafka-diag-app
+  namespace: {{ .Values.namespace }}
+spec:
+  to:
+    kind: Service
+    name: kafka-diag-app
+  port:
+    targetPort: {{ .Values.app.port }}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

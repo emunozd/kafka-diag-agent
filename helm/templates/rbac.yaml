@@ -1,0 +1,43 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kafka-diag-reader
+rules:
+  - apiGroups: ["kafka.strimzi.io"]
+    resources:
+      - kafkas
+      - kafkatopics
+      - kafkausers
+      - kafkaconnects
+      - kafkaconnectors
+      - kafkamirrormaker2s
+      - kafkabridges
+      - kafkanodepools
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - configmaps
+      - events
+      - services
+      - endpoints
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kafka-diag-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: kafka-diag-sa
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: ClusterRole
+  name: kafka-diag-reader
+  apiGroup: rbac.authorization.k8s.io

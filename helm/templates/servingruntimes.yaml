@@ -1,0 +1,83 @@
+{{- if .Values.llm.local }}
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: vllm-runtime-llm
+  namespace: {{ .Values.namespace }}
+  labels:
+    opendatahub.io/dashboard: "true"
+spec:
+  annotations:
+    prometheus.io/port: "8000"
+    prometheus.io/scheme: http
+  containers:
+    - args:
+        - --model=/mnt/models
+        - --dtype=auto
+        - --max-model-len={{ .Values.llm.gpu.maxModelLen }}
+        - --gpu-memory-utilization={{ .Values.llm.gpu.memoryUtilization }}
+        - --max-num-seqs={{ .Values.llm.gpu.maxNumSeqs }}
+        - --enable-auto-tool-choice
+        - --tool-call-parser=hermes
+      image: {{ .Values.llm.gpu.image }}
+      name: kserve-container
+      ports:
+        - containerPort: 8000
+          name: h2c
+          protocol: TCP
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - mountPath: /dev/shm
+          name: shm
+  multiModel: false
+  protocolVersions:
+    - grpc-v2
+    - v2
+  supportedModelFormats:
+    - autoSelect: true
+      name: vLLM
+  volumes:
+    - emptyDir:
+        medium: Memory
+        sizeLimit: 2Gi
+      name: shm
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: vllm-runtime-embed
+  namespace: {{ .Values.namespace }}
+  labels:
+    opendatahub.io/dashboard: "true"
+spec:
+  containers:
+    - args:
+        - --model=/mnt/models
+        - --dtype=float32
+        - --max-model-len=512
+        - --trust-remote-code
+      image: {{ .Values.llm.embed.image }}
+      name: kserve-container
+      ports:
+        - containerPort: 8000
+          name: h2c
+          protocol: TCP
+      resources:
+        limits:
+          cpu: {{ .Values.llm.embed.cpuLimit | quote }}
+          memory: {{ .Values.llm.embed.memoryLimit }}
+        requests:
+          cpu: {{ .Values.llm.embed.cpuRequest | quote }}
+          memory: {{ .Values.llm.embed.memoryRequest }}
+  multiModel: false
+  protocolVersions:
+    - grpc-v2
+    - v2
+  supportedModelFormats:
+    - autoSelect: true
+      name: vLLM
+{{- end }}

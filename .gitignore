@@ -1,0 +1,29 @@
+# Java / Quarkus
+quarkus/target/
+quarkus/.mvn/
+*.class
+*.jar
+!quarkus/src/**/*.jar
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Helm secrets — NUNCA commitear valores con credenciales
+helm/values-secret*.yaml
+helm/values-prod*.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,18 @@
+# ============================================================
+# Override: modo LLM externo (Claude, OpenAI, Azure, etc.)
+# No despliega InferenceServices ni necesita GPU
+#
+# Uso:
+#   helm install kafka-diag ./helm/ \
+#     -f values-external-llm.yaml \
+#     --set llm.external.apiKey=sk-ant-xxx \
+#     --set llm.external.baseUrl=https://api.anthropic.com/v1 \
+#     --set llm.external.modelName=claude-sonnet-4-6
+# ============================================================
+
+llm:
+  local: false
+  external:
+    baseUrl: ""       # sobreescribir con --set
+    apiKey: ""        # sobreescribir con --set
+    modelName: ""     # sobreescribir con --set

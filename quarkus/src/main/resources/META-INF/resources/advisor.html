@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kafka Diagnostic Agent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Red Hat Display', 'Segoe UI', sans-serif;
+      background: #151515;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1f1f1f;
+      border-bottom: 2px solid #ee0000;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    header span {
+      font-size: 13px;
+      color: #8a8a8a;
+    }
+
+    .rh-logo {
+      color: #ee0000;
+      font-weight: 700;
+      font-size: 18px;
+      border: 2px solid #ee0000;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    main {
+      flex: 1;
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 32px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .input-section {
+      background: #1f1f1f;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: #8a8a8a;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .field input {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      color: #f0f0f0;
+      padding: 8px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field input:focus {
+      border-color: #ee0000;
+    }
+
+    .field.ns { width: 200px; }
+
+    textarea {
+      width: 100%;
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      color: #f0f0f0;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus { border-color: #ee0000; }
+
+    textarea::placeholder { color: #555; }
+
+    .btn-primary {
+      background: #ee0000;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-primary:hover { background: #cc0000; }
+    .btn-primary:disabled { background: #555; cursor: not-allowed; }
+
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .example-btn {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 20px;
+      color: #aaa;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .example-btn:hover {
+      border-color: #ee0000;
+      color: #f0f0f0;
+    }
+
+    .response-section {
+      background: #1f1f1f;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      padding: 20px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .response-section.visible { display: flex; }
+
+    .response-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .response-header span {
+      font-size: 12px;
+      color: #8a8a8a;
+    }
+
+    .ns-badge {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .response-body {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #e0e0e0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .response-body.loading {
+      color: #666;
+      font-style: italic;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #333;
+      border-top-color: #ee0000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      color: #8a8a8a;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover { border-color: #666; color: #f0f0f0; }
+
+    footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: #555;
+      border-top: 1px solid #2a2a2a;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="rh-logo">RH</span>
+  <h1>Kafka Diagnostic Agent</h1>
+  <span>AMQ Streams · Powered by Qwen3-8B + RAG</span>
+</header>
+
+<main>
+  <div class="input-section">
+    <div class="field">
+      <label>Your question</label>
+      <textarea id="question" placeholder="why is mirrormaker not working&#10;how is my current architecture&#10;analyze any issue in my environment&#10;why do we have consumer lag"></textarea>
+    </div>
+
+    <div class="input-row">
+      <div class="field ns">
+        <label>Namespace (optional)</label>
+        <input type="text" id="namespace" placeholder="my-kafka-ns">
+      </div>
+      <button class="btn-primary" id="submitBtn" onclick="diagnose()">Diagnose</button>
+    </div>
+
+    <div class="examples">
+      <button class="example-btn" onclick="setQuestion('why is mirrormaker not working')">MirrorMaker issue</button>
+      <button class="example-btn" onclick="setQuestion('how is my current kafka architecture')">Architecture overview</button>
+      <button class="example-btn" onclick="setQuestion('why do we have consumer lag')">Consumer lag</button>
+      <button class="example-btn" onclick="setQuestion('analyze any issues in my environment')">Full analysis</button>
+      <button class="example-btn" onclick="setQuestion('how can message consumption be improved')">Improve consumption</button>
+      <button class="example-btn" onclick="setQuestion('give me a brief status of the current cluster')">Cluster status</button>
+    </div>
+  </div>
+
+  <div class="response-section" id="responseSection">
+    <div class="response-header">
+      <span id="responseLabel">Diagnosis result</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="ns-badge" id="nsBadge"></span>
+        <button class="copy-btn" onclick="copyResponse()">Copy</button>
+      </div>
+    </div>
+    <div class="response-body" id="responseBody"></div>
+  </div>
+</main>
+
+<footer>
+  Kafka Diagnostic Agent · Red Hat AMQ Streams · <a href="https://github.com/emunozd/kafka-diag-agent" style="color:#666">GitHub</a>
+</footer>
+
+<script>
+  function setQuestion(text) {
+    document.getElementById('question').value = text;
+    document.getElementById('question').focus();
+  }
+
+  function diagnose() {
+    var question = document.getElementById('question').value.trim();
+    var namespace = document.getElementById('namespace').value.trim();
+
+    if (!question) {
+      document.getElementById('question').focus();
+      return;
+    }
+
+    var btn = document.getElementById('submitBtn');
+    var section = document.getElementById('responseSection');
+    var body = document.getElementById('responseBody');
+    var label = document.getElementById('responseLabel');
+    var badge = document.getElementById('nsBadge');
+
+    btn.disabled = true;
+    section.classList.add('visible');
+    body.className = 'response-body loading';
+    body.innerHTML = '<span class="spinner"></span>Analyzing your Kafka cluster...';
+    label.textContent = 'Diagnosis result';
+    badge.textContent = namespace || 'default namespace';
+
+    var payload = JSON.stringify({
+      question: question,
+      namespace: namespace || null
+    });
+
+    fetch('/api/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      body.className = 'response-body';
+      if (data.error) {
+        body.textContent = 'Error: ' + data.error;
+      } else {
+        body.textContent = data.answer;
+        badge.textContent = data.namespace || namespace || 'default namespace';
+      }
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      body.className = 'response-body';
+      body.textContent = 'Connection error: ' + err.message;
+    });
+  }
+
+  function copyResponse() {
+    var text = document.getElementById('responseBody').textContent;
+    navigator.clipboard.writeText(text).then(function() {
+      var btn = document.querySelector('.copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+  }
+
+  document.getElementById('question').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      diagnose();
+    }
+  });
+</script>
+
+</body>
+</html>
