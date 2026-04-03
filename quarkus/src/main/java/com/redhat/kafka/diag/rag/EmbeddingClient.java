@@ -32,15 +32,11 @@ public class EmbeddingClient {
 
     @Inject
     AgentConfig config;
-
-    private HttpClient httpClient;
+    
     private String embeddingsUrl;
 
     @PostConstruct
     void init() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
         this.embeddingsUrl = config.embed().baseUrl() + "/embeddings";
         LOG.infof("EmbeddingClient initialized — endpoint: %s", embeddingsUrl);
     }
@@ -56,31 +52,37 @@ public class EmbeddingClient {
         if (text == null || text.isBlank()) {
             throw new EmbeddingException("Input text must not be blank");
         }
-
-        // Truncate to avoid exceeding the model's max token limit (512 tokens)
         String truncated = text.length() > 2000 ? text.substring(0, 2000) : text;
-
         String requestBody = buildRequestBody(truncated);
-
+    
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(embeddingsUrl))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofSeconds(30))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(
-                    request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                throw new EmbeddingException(
-                        "Embedding endpoint returned HTTP " + response.statusCode() +
-                        ": " + response.body());
+            java.net.URL url = new java.net.URL(embeddingsUrl);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+    
+            byte[] body = requestBody.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            conn.setRequestProperty("Content-Length", String.valueOf(body.length));
+    
+            try (java.io.OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+                os.flush();
             }
-
-            return parseEmbedding(response.body());
-
+    
+            int status = conn.getResponseCode();
+            java.io.InputStream is = status == 200 ? conn.getInputStream() : conn.getErrorStream();
+            String response = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            conn.disconnect();
+    
+            if (status != 200) {
+                throw new EmbeddingException("Embedding endpoint returned HTTP " + status + ": " + response);
+            }
+    
+            return parseEmbedding(response);
+    
         } catch (EmbeddingException e) {
             throw e;
         } catch (Exception e) {
