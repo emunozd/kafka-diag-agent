@@ -76,12 +76,6 @@
       <artifactId>quarkus-rest-client-jackson</artifactId>
     </dependency>
 
-    <!-- Multipart para upload de PDFs -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-rest-client-multipart</artifactId>
-    </dependency>
-
     <!-- Test -->
     <dependency>
       <groupId>io.quarkus</groupId>
