@@ -43,6 +43,31 @@
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
 
+    <!-- OpenShift client via Quarkus extension — manages fabric8 transitively -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-openshift-client</artifactId>
+    </dependency>
+
+    <!-- Fabric8 OpenShift client API — compile scope for KubernetesTool imports -->
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-client-api</artifactId>
+    </dependency>
+
+    <!-- Fabric8 Kubernetes client API — compile scope for model classes -->
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>kubernetes-client-api</artifactId>
+    </dependency>
+
+    <!-- Strimzi API model — typed access to Kafka CRDs -->
+    <dependency>
+      <groupId>io.strimzi</groupId>
+      <artifactId>api</artifactId>
+      <version>0.46.0</version>
+    </dependency>
+
     <!-- LangChain4j con soporte OpenAI-compatible -->
     <dependency>
       <groupId>io.quarkiverse.langchain4j</groupId>
