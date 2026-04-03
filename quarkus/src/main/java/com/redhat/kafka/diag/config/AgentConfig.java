@@ -29,7 +29,7 @@ public interface AgentConfig {
         @WithDefault("kafka-knowledge")
         String collection();
 
-        @WithDefault("5")
+        @WithDefault("2")
         int topK();
     }
 
