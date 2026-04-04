@@ -8,7 +8,6 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -89,21 +88,20 @@ public class DiagnosticResource {
      */
     @POST
     @Path("/upload-report")
-    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadReport(@RestForm("report") FileUpload reportFile) {
-        if (reportFile == null) {
+    public Response uploadReport(byte[] body) {
+        if (body == null || body.length == 0) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse("No file uploaded. Use form field name 'report'"))
+                    .entity(new ErrorResponse("No file content received"))
                     .build();
         }
 
-        LOG.infof("Received report upload: %s (%d bytes)",
-                reportFile.fileName(), reportFile.size());
+        LOG.infof("Received report upload: %d bytes", body.length);
 
         try {
             Map<String, String> files = extractZipContents(
-                    java.nio.file.Files.newInputStream(reportFile.uploadedFile()));
+                    new java.io.ByteArrayInputStream(body));
 
             if (files.isEmpty()) {
                 return Response.status(Response.Status.BAD_REQUEST)
@@ -114,13 +112,12 @@ public class DiagnosticResource {
             }
 
             ReportUploadTool.setReportFiles(files);
-
             LOG.infof("Report ZIP extracted — %d files ready for analysis", files.size());
 
             return Response.ok(new UploadResponse(
                     "Report uploaded successfully — " + files.size() + " files extracted",
                     files.size(),
-                    reportFile.fileName()
+                    "report.zip"
             )).build();
 
         } catch (Exception e) {
