@@ -106,15 +106,6 @@
     </dependency>
 
     <!-- ============================================================ -->
-    <!-- ZIP handling                                                 -->
-    <!-- ============================================================ -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-rest</artifactId>
-      <version>${quarkus.platform.version}</version>
-    </dependency>
-
-    <!-- ============================================================ -->
     <!-- Config, health, web UI                                       -->
     <!-- ============================================================ -->
     <dependency>
