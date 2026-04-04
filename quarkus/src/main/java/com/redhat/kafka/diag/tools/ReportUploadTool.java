@@ -4,139 +4,181 @@ import dev.langchain4j.agent.tool.Tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 
+import java.util.Map;
+import java.util.TreeMap;
+
 /**
  * Report Upload Tool — Phase 4.
  *
- * Parses and analyzes a Strimzi report.sh output uploaded by the user via
- * the Web UI. Allows diagnosing Kafka clusters without direct cluster access —
- * useful when the cluster is in a customer environment or a different namespace.
+ * Analyzes a Strimzi report.sh ZIP output that has been uploaded via the Web UI
+ * and pre-processed by DiagnosticResource into a structured map of files.
  *
- * The uploaded report content is stored per-thread so concurrent requests
- * are isolated from each other. DiagnosticResource clears the ThreadLocal
- * in a finally block after each request to prevent memory leaks.
+ * The ZIP structure is:
+ *   report-<date>/reports/
+ *     kafkas/<cluster>.yaml
+ *     kafkatopics/<topic>.yaml
+ *     pods/<pod>.yaml or pods/<pod>.log
+ *     events/events.txt
+ *     ...
+ *
+ * DiagnosticResource extracts all text files from the ZIP and stores them
+ * as a Map<relativePath, content> in the ThreadLocal. This tool then queries
+ * that map based on what the agent needs to know.
  */
 @ApplicationScoped
 public class ReportUploadTool {
 
     private static final Logger LOG = Logger.getLogger(ReportUploadTool.class);
 
-    // Maximum characters to return per section to stay within LLM context limits
-    private static final int MAX_SECTION_CHARS = 2000;
+    private static final int MAX_CONTENT_CHARS = 3000;
 
-    // Thread-local storage — one report per active request thread
-    private static final ThreadLocal<String> uploadedReport = new ThreadLocal<>();
+    // Thread-local: map of relative path → file content extracted from the ZIP
+    private static final ThreadLocal<Map<String, String>> reportFiles = new ThreadLocal<>();
 
-    @Tool("Analyze a previously uploaded Strimzi report.sh output. " +
-          "Use this when the user has uploaded a report file instead of connecting directly to the cluster. " +
-          "Call this tool first when a report has been uploaded, before trying any live cluster tools. " +
-          "Pass an aspect like: pods, topics, events, logs, config, connect, mirror — or 'summary' for an overview.")
+    @Tool("Analyze a previously uploaded Strimzi report.sh ZIP output. " +
+          "Use this when the user has uploaded a report ZIP file instead of connecting directly to the cluster. " +
+          "Call this tool first when a report has been uploaded. " +
+          "Pass an aspect to focus on: 'summary', 'kafka', 'topics', 'pods', 'events', 'connect', 'mirror', 'secrets', or a specific filename.")
     public String analyzeUploadedReport(String aspect) {
-        String report = uploadedReport.get();
-        if (report == null || report.isBlank()) {
+        Map<String, String> files = reportFiles.get();
+        if (files == null || files.isEmpty()) {
             return "[No report has been uploaded. " +
-                   "Please upload a Strimzi report.sh output file via the web interface, " +
-                   "or ask a question about a live cluster instead.]";
+                   "Please upload a Strimzi report.sh ZIP file via the web interface.]";
         }
 
-        LOG.infof("Analyzing uploaded report — aspect: %s, size: %d chars",
-                aspect, report.length());
+        LOG.infof("Analyzing uploaded report — aspect: %s, files: %d", aspect, files.size());
 
         String aspectLower = aspect == null ? "summary" : aspect.toLowerCase();
 
-        if (aspectLower.contains("pod") || aspectLower.contains("status")) {
-            return extractSection(report, "pods", "==== Pods", "====");
-        }
-        if (aspectLower.contains("topic")) {
-            return extractSection(report, "topics", "==== KafkaTopic", "====");
-        }
-        if (aspectLower.contains("event")) {
-            return extractSection(report, "events", "==== Events", "====");
-        }
-        if (aspectLower.contains("log")) {
-            return extractSection(report, "logs", "==== Logs", "====");
-        }
-        if (aspectLower.contains("config")) {
-            return extractSection(report, "configuration", "==== Kafka", "====");
-        }
-        if (aspectLower.contains("connect") || aspectLower.contains("connector")) {
-            return extractSection(report, "connect", "==== KafkaConnect", "====");
-        }
-        if (aspectLower.contains("mirror")) {
-            return extractSection(report, "mirrormaker", "==== KafkaMirrorMaker", "====");
+        // Summary — list all files found
+        if (aspectLower.contains("summary") || aspectLower.contains("overview")) {
+            return buildSummary(files);
         }
 
-        // Default — general summary
-        return buildSummary(report);
+        // Search for files matching the requested aspect
+        String prefix = mapAspectToPrefix(aspectLower);
+        if (prefix != null) {
+            return extractByPrefix(files, prefix);
+        }
+
+        // Try to find a specific file by name
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            if (entry.getKey().toLowerCase().contains(aspectLower)) {
+                return formatFile(entry.getKey(), entry.getValue());
+            }
+        }
+
+        // Default — return summary
+        return buildSummary(files);
     }
 
     // ----------------------------------------------------------------
     // Static lifecycle methods — called by DiagnosticResource
     // ----------------------------------------------------------------
 
-    /** Store the uploaded report for the current request thread. */
-    public static void setUploadedReport(String content) {
-        uploadedReport.set(content);
+    /** Store the extracted report files for the current request thread. */
+    public static void setReportFiles(Map<String, String> files) {
+        reportFiles.set(files);
     }
 
-    /** Clear the report after the request completes. Call in a finally block. */
-    public static void clearUploadedReport() {
-        uploadedReport.remove();
+    /** Clear report files after the request completes. Call in a finally block. */
+    public static void clearReportFiles() {
+        reportFiles.remove();
     }
 
-    /** Returns true if a report is currently loaded for this thread. */
-    public static boolean hasUploadedReport() {
-        String r = uploadedReport.get();
-        return r != null && !r.isBlank();
+    /** Returns true if report files are loaded for this thread. */
+    public static boolean hasReportFiles() {
+        Map<String, String> files = reportFiles.get();
+        return files != null && !files.isEmpty();
     }
 
     // ----------------------------------------------------------------
-    // Internal parsing helpers
+    // Internal helpers
     // ----------------------------------------------------------------
 
-    private String extractSection(String report, String sectionName,
-                                  String startMarker, String endMarker) {
-        int start = report.indexOf(startMarker);
-        if (start == -1) {
-            return "No " + sectionName + " section found in the uploaded report.\n\n" +
-                   buildSummary(report);
-        }
-
-        int nextSection = report.indexOf(endMarker, start + startMarker.length());
-        String section = nextSection == -1
-                ? report.substring(start)
-                : report.substring(start, nextSection);
-
-        if (section.length() > MAX_SECTION_CHARS) {
-            section = section.substring(0, MAX_SECTION_CHARS) +
-                      "\n\n[Section truncated — showing first " + MAX_SECTION_CHARS + " chars]";
-        }
-
-        return "=== " + sectionName.toUpperCase() + " from uploaded report ===\n\n" + section;
+    private String mapAspectToPrefix(String aspect) {
+        if (aspect.contains("kafka") && !aspect.contains("topic") &&
+            !aspect.contains("connect") && !aspect.contains("mirror")) return "kafkas/";
+        if (aspect.contains("topic"))   return "kafkatopics/";
+        if (aspect.contains("pod") || aspect.contains("log")) return "pods/";
+        if (aspect.contains("event"))   return "events/";
+        if (aspect.contains("connect") && !aspect.contains("mirror")) return "kafkaconnects/";
+        if (aspect.contains("mirror"))  return "kafkamirrormaker";
+        if (aspect.contains("secret"))  return "secrets/";
+        if (aspect.contains("service")) return "services/";
+        if (aspect.contains("config"))  return "configmaps/";
+        if (aspect.contains("role"))    return "clusterroles/";
+        if (aspect.contains("node"))    return "kafkanodepools/";
+        return null;
     }
 
-    private String buildSummary(String report) {
+    private String extractByPrefix(Map<String, String> files, String prefix) {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== UPLOADED REPORT SUMMARY ===\n\n");
-        sb.append("Report size: ").append(report.length()).append(" characters\n\n");
+        int count = 0;
+        int totalChars = 0;
 
-        String[] sections = {
-            "Kafka", "KafkaTopic", "KafkaUser", "KafkaConnect",
-            "KafkaConnector", "KafkaMirrorMaker", "Pods", "Events", "Logs"
-        };
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            // Match by directory prefix anywhere in the path
+            String key = entry.getKey();
+            boolean matches = key.contains("/" + prefix) || key.contains("\\" + prefix);
+            if (!matches) continue;
 
-        sb.append("Sections detected:\n");
-        for (String section : sections) {
-            if (report.contains("==== " + section) || report.contains("=== " + section)) {
-                sb.append("  - ").append(section).append("\n");
+            count++;
+            String content = entry.getValue();
+            if (totalChars + content.length() > MAX_CONTENT_CHARS) {
+                content = content.substring(0, Math.max(0, MAX_CONTENT_CHARS - totalChars)) +
+                          "\n[truncated]";
+            }
+
+            sb.append("--- ").append(key).append(" ---\n");
+            sb.append(content).append("\n\n");
+            totalChars += content.length();
+
+            if (totalChars >= MAX_CONTENT_CHARS) {
+                sb.append("[Additional files omitted — ask for a specific file by name]\n");
+                break;
             }
         }
 
-        sb.append("\nReport excerpt (first 1500 characters):\n\n");
-        sb.append(report, 0, Math.min(1500, report.length()));
-        if (report.length() > 1500) {
-            sb.append("\n\n[... ask about specific sections: pods, topics, events, logs, config, connect, mirror]");
+        if (count == 0) {
+            return "No files found for aspect '" + prefix + "' in the uploaded report.\n\n" +
+                   buildSummary(files);
         }
 
+        return "=== " + prefix.toUpperCase().replace("/", "") +
+               " from uploaded report (" + count + " files) ===\n\n" + sb;
+    }
+
+    private String buildSummary(Map<String, String> files) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== UPLOADED REPORT SUMMARY ===\n\n");
+        sb.append("Total files: ").append(files.size()).append("\n\n");
+
+        // Group by directory
+        Map<String, Integer> dirs = new TreeMap<>();
+        for (String path : files.keySet()) {
+            int slash = path.lastIndexOf('/');
+            String dir = slash >= 0 ? path.substring(0, slash) : "(root)";
+            // Get the last meaningful directory segment
+            int prevSlash = dir.lastIndexOf('/');
+            String shortDir = prevSlash >= 0 ? dir.substring(prevSlash + 1) : dir;
+            dirs.merge(shortDir, 1, Integer::sum);
+        }
+
+        sb.append("Contents:\n");
+        for (Map.Entry<String, Integer> e : dirs.entrySet()) {
+            sb.append("  ").append(e.getKey())
+              .append(": ").append(e.getValue()).append(" file(s)\n");
+        }
+
+        sb.append("\nAsk about: kafka, topics, pods, events, connect, mirror, secrets, configmaps, roles, nodes");
         return sb.toString();
+    }
+
+    private String formatFile(String path, String content) {
+        if (content.length() > MAX_CONTENT_CHARS) {
+            content = content.substring(0, MAX_CONTENT_CHARS) + "\n[truncated]";
+        }
+        return "--- " + path + " ---\n\n" + content;
     }
 }

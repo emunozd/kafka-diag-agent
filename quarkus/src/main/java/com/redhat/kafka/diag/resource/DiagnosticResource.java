@@ -8,22 +8,36 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * REST endpoint for the Kafka Diagnostic Agent.
  *
- * POST /api/diagnose       — diagnose using live cluster access
- * POST /api/upload-report  — store an uploaded report.sh output
- * POST /api/diagnose-report — diagnose using the uploaded report (no cluster access needed)
- * GET  /api/health         — health check
+ * POST /api/diagnose         — diagnose using live cluster access
+ * POST /api/upload-report    — upload a Strimzi report.sh ZIP file
+ * POST /api/diagnose-report  — diagnose using the uploaded ZIP report
+ * GET  /api/health           — health check
  */
 @Path("/api")
 public class DiagnosticResource {
 
     private static final Logger LOG = Logger.getLogger(DiagnosticResource.class);
 
-    // Maximum report size accepted — 2MB
-    private static final int MAX_REPORT_SIZE = 2 * 1024 * 1024;
+    // Maximum uncompressed content per file — 50KB
+    private static final int MAX_FILE_CHARS = 50_000;
+    // Maximum total files to extract from the ZIP
+    private static final int MAX_FILES = 200;
+    // File extensions to extract as text
+    private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
+            ".yaml", ".yml", ".json", ".txt", ".log", ".properties", ".conf"
+    );
 
     @Inject
     KafkaDiagnosticAgent agent;
@@ -35,11 +49,6 @@ public class DiagnosticResource {
     // POST /api/diagnose — live cluster mode
     // ----------------------------------------------------------------
 
-    /**
-     * Diagnose using live cluster access via the Kubernetes API.
-     * The namespace is prepended to the question so all tool calls target it:
-     *   "[namespace: my-ns] why is mirrormaker not working"
-     */
     @POST
     @Path("/diagnose")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -68,50 +77,67 @@ public class DiagnosticResource {
     }
 
     // ----------------------------------------------------------------
-    // POST /api/upload-report — store uploaded report
+    // POST /api/upload-report — accept ZIP from multipart form
     // ----------------------------------------------------------------
 
     /**
-     * Accept a plain-text Strimzi report.sh output and store it in the
-     * ThreadLocal for the subsequent diagnose-report call.
+     * Accept a Strimzi report.sh ZIP file uploaded via multipart/form-data.
+     * Extracts all text/YAML files from the ZIP into a Map and stores them
+     * in the ReportUploadTool ThreadLocal for the subsequent diagnose-report call.
      *
-     * The client must call /api/diagnose-report on the same session after
-     * uploading. The report is cleared after each diagnosis.
+     * Form field name: "report"
      */
     @POST
     @Path("/upload-report")
-    @Consumes(MediaType.TEXT_PLAIN)
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadReport(String reportContent) {
-        if (reportContent == null || reportContent.isBlank()) {
+    public Response uploadReport(@RestForm("report") FileUpload reportFile) {
+        if (reportFile == null) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse("Report content is empty"))
+                    .entity(new ErrorResponse("No file uploaded. Use form field name 'report'"))
                     .build();
         }
 
-        if (reportContent.length() > MAX_REPORT_SIZE) {
-            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
-                    .entity(new ErrorResponse("Report exceeds maximum size of 2MB"))
+        LOG.infof("Received report upload: %s (%d bytes)",
+                reportFile.fileName(), reportFile.size());
+
+        try {
+            Map<String, String> files = extractZipContents(
+                    java.nio.file.Files.newInputStream(reportFile.uploadedFile()));
+
+            if (files.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(new ErrorResponse(
+                                "No readable files found in the ZIP. " +
+                                "Make sure it is a valid Strimzi report.sh output."))
+                        .build();
+            }
+
+            ReportUploadTool.setReportFiles(files);
+
+            LOG.infof("Report ZIP extracted — %d files ready for analysis", files.size());
+
+            return Response.ok(new UploadResponse(
+                    "Report uploaded successfully — " + files.size() + " files extracted",
+                    files.size(),
+                    reportFile.fileName()
+            )).build();
+
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to process uploaded ZIP");
+            return Response.serverError()
+                    .entity(new ErrorResponse("Failed to process ZIP: " + e.getMessage()))
                     .build();
         }
-
-        ReportUploadTool.setUploadedReport(reportContent);
-
-        LOG.infof("Report uploaded — size: %d chars", reportContent.length());
-
-        return Response.ok(new UploadResponse(
-                "Report uploaded successfully",
-                reportContent.length()
-        )).build();
     }
 
     // ----------------------------------------------------------------
-    // POST /api/diagnose-report — report-based diagnosis mode
+    // POST /api/diagnose-report — report-based diagnosis
     // ----------------------------------------------------------------
 
     /**
-     * Diagnose using a previously uploaded report instead of live cluster access.
-     * The agent will call ReportUploadTool instead of KubernetesTool.
+     * Diagnose using a previously uploaded and extracted ZIP report.
+     * The agent will call ReportUploadTool to access the file contents.
      * The report is cleared after the response is sent.
      */
     @POST
@@ -125,16 +151,17 @@ public class DiagnosticResource {
                     .build();
         }
 
-        if (!ReportUploadTool.hasUploadedReport()) {
+        if (!ReportUploadTool.hasReportFiles()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(new ErrorResponse(
-                            "No report uploaded. Please upload a report first via POST /api/upload-report"))
+                            "No report uploaded. Please upload a Strimzi report.sh ZIP first " +
+                            "via POST /api/upload-report"))
                     .build();
         }
 
-        // Tell the agent to use the uploaded report — no namespace needed
         String question = "[report-mode: true] " + request.question() +
-                          " — use the analyzeUploadedReport tool to read the cluster data.";
+                          " — use the analyzeUploadedReport tool to read the cluster data " +
+                          "from the uploaded ZIP report. Do not use KubernetesTool.";
 
         LOG.infof("Diagnosing (report): question=%s", request.question());
 
@@ -147,8 +174,7 @@ public class DiagnosticResource {
                     .entity(new ErrorResponse("Diagnosis failed: " + e.getMessage()))
                     .build();
         } finally {
-            // Always clear the report after use to prevent ThreadLocal leaks
-            ReportUploadTool.clearUploadedReport();
+            ReportUploadTool.clearReportFiles();
         }
     }
 
@@ -161,6 +187,102 @@ public class DiagnosticResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response health() {
         return Response.ok("{\"status\":\"ok\",\"agent\":\"kafka-diag-agent\"}").build();
+    }
+
+    // ----------------------------------------------------------------
+    // ZIP extraction
+    // ----------------------------------------------------------------
+
+    /**
+     * Extract all text files from a ZIP stream into a map of path → content.
+     * Skips binary files, directories, secrets content, and oversized files.
+     */
+    private Map<String, String> extractZipContents(InputStream is) throws Exception {
+        Map<String, String> files = new LinkedHashMap<>();
+
+        try (ZipInputStream zis = new ZipInputStream(is)) {
+            ZipEntry entry;
+            int fileCount = 0;
+
+            while ((entry = zis.getNextEntry()) != null && fileCount < MAX_FILES) {
+                String name = entry.getName();
+
+                // Skip directories
+                if (entry.isDirectory()) {
+                    zis.closeEntry();
+                    continue;
+                }
+
+                // Skip secrets content (keep metadata but not values)
+                if (name.contains("/secrets/") && !name.endsWith(".yaml")) {
+                    zis.closeEntry();
+                    continue;
+                }
+
+                // Only extract text files
+                if (!isTextFile(name)) {
+                    zis.closeEntry();
+                    continue;
+                }
+
+                // Read content with size limit
+                byte[] buffer = new byte[8192];
+                StringBuilder sb = new StringBuilder();
+                int read;
+                int totalRead = 0;
+
+                while ((read = zis.read(buffer)) != -1) {
+                    totalRead += read;
+                    if (totalRead <= MAX_FILE_CHARS) {
+                        sb.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
+                    }
+                }
+
+                if (totalRead > MAX_FILE_CHARS) {
+                    sb.append("\n[File truncated at ")
+                      .append(MAX_FILE_CHARS)
+                      .append(" characters — original size: ")
+                      .append(totalRead)
+                      .append(" bytes]");
+                }
+
+                // Normalize path separators and remove top-level date folder
+                String normalizedPath = normalizePath(name);
+                if (!sb.toString().isBlank()) {
+                    files.put(normalizedPath, sb.toString());
+                    fileCount++;
+                }
+
+                zis.closeEntry();
+            }
+        }
+
+        return files;
+    }
+
+    /**
+     * Normalize the ZIP entry path:
+     * - Replace backslashes with forward slashes
+     * - Remove the top-level date folder (report-DD-MM-YYYY_HH-MM-SS/)
+     * - Remove the "reports/" prefix
+     * Result: "kafkas/my-cluster.yaml", "pods/broker-0.log", etc.
+     */
+    private String normalizePath(String path) {
+        path = path.replace('\\', '/');
+        // Remove top-level date folder: report-08-01-2026_18-47-12/reports/
+        int reportsIdx = path.indexOf("/reports/");
+        if (reportsIdx >= 0) {
+            path = path.substring(reportsIdx + "/reports/".length());
+        }
+        return path;
+    }
+
+    private boolean isTextFile(String name) {
+        String lower = name.toLowerCase();
+        for (String ext : TEXT_EXTENSIONS) {
+            if (lower.endsWith(ext)) return true;
+        }
+        return false;
     }
 
     // ----------------------------------------------------------------
@@ -186,7 +308,7 @@ public class DiagnosticResource {
 
     public record DiagnoseResponse(String answer, String namespace, boolean fromReport) {}
 
-    public record UploadResponse(String message, int size) {}
+    public record UploadResponse(String message, int filesExtracted, String filename) {}
 
     public record ErrorResponse(String error) {}
 }

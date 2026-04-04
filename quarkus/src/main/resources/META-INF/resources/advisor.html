@@ -6,305 +6,141 @@
   <title>Kafka Diagnostic Agent</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       font-family: 'Red Hat Display', 'Segoe UI', sans-serif;
-      background: #151515;
-      color: #f0f0f0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: #151515; color: #f0f0f0;
+      min-height: 100vh; display: flex; flex-direction: column;
     }
-
     header {
-      background: #1f1f1f;
-      border-bottom: 2px solid #ee0000;
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      background: #1f1f1f; border-bottom: 2px solid #ee0000;
+      padding: 16px 24px; display: flex; align-items: center; gap: 12px;
     }
-
     header h1 { font-size: 20px; font-weight: 600; color: #fff; }
     header span { font-size: 13px; color: #8a8a8a; }
-
     .rh-logo {
-      color: #ee0000;
-      font-weight: 700;
-      font-size: 18px;
-      border: 2px solid #ee0000;
-      padding: 2px 8px;
-      border-radius: 3px;
+      color: #ee0000; font-weight: 700; font-size: 18px;
+      border: 2px solid #ee0000; padding: 2px 8px; border-radius: 3px;
     }
-
     main {
-      flex: 1;
-      max-width: 960px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 32px 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+      flex: 1; max-width: 960px; width: 100%;
+      margin: 0 auto; padding: 32px 24px;
+      display: flex; flex-direction: column; gap: 20px;
     }
-
-    /* Mode tabs */
     .mode-tabs {
-      display: flex;
-      gap: 0;
-      border: 1px solid #3a3a3a;
-      border-radius: 6px;
-      overflow: hidden;
-      width: fit-content;
+      display: flex; border: 1px solid #3a3a3a;
+      border-radius: 6px; overflow: hidden; width: fit-content;
     }
-
     .mode-tab {
-      background: #2a2a2a;
-      border: none;
-      color: #8a8a8a;
-      padding: 8px 20px;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.2s;
-      border-right: 1px solid #3a3a3a;
+      background: #2a2a2a; border: none; color: #8a8a8a;
+      padding: 8px 20px; font-size: 13px; cursor: pointer;
+      transition: all 0.2s; border-right: 1px solid #3a3a3a;
     }
-
     .mode-tab:last-child { border-right: none; }
-
-    .mode-tab.active {
-      background: #ee0000;
-      color: #fff;
-      font-weight: 600;
-    }
-
+    .mode-tab.active { background: #ee0000; color: #fff; font-weight: 600; }
     .mode-tab:hover:not(.active) { background: #333; color: #f0f0f0; }
-
-    /* Panels */
     .panel { display: none; }
     .panel.visible { display: block; }
-
-    /* Input section */
     .input-section {
-      background: #1f1f1f;
-      border: 1px solid #3a3a3a;
-      border-radius: 8px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      background: #1f1f1f; border: 1px solid #3a3a3a;
+      border-radius: 8px; padding: 20px;
+      display: flex; flex-direction: column; gap: 12px;
     }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
-      font-size: 12px;
-      color: #8a8a8a;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-size: 12px; color: #8a8a8a;
+      text-transform: uppercase; letter-spacing: 0.5px;
     }
-
     .field input, .field textarea {
-      background: #2a2a2a;
-      border: 1px solid #3a3a3a;
-      border-radius: 4px;
-      color: #f0f0f0;
-      padding: 8px 12px;
-      font-size: 14px;
-      font-family: inherit;
-      outline: none;
-      transition: border-color 0.2s;
+      background: #2a2a2a; border: 1px solid #3a3a3a;
+      border-radius: 4px; color: #f0f0f0;
+      padding: 8px 12px; font-size: 14px; font-family: inherit;
+      outline: none; transition: border-color 0.2s;
     }
-
     .field input:focus, .field textarea:focus { border-color: #ee0000; }
     .field textarea { resize: vertical; min-height: 80px; }
     .field textarea::placeholder { color: #555; }
     .field.ns-field { width: 220px; }
-
-    .input-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-end;
-    }
-
-    /* Upload area */
+    .input-row { display: flex; gap: 12px; align-items: flex-end; }
     .upload-area {
-      border: 2px dashed #3a3a3a;
-      border-radius: 6px;
-      padding: 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      position: relative;
+      border: 2px dashed #3a3a3a; border-radius: 6px;
+      padding: 24px; text-align: center; cursor: pointer;
+      transition: all 0.2s; position: relative;
     }
-
     .upload-area:hover, .upload-area.dragover {
-      border-color: #ee0000;
-      background: rgba(238,0,0,0.04);
+      border-color: #ee0000; background: rgba(238,0,0,0.04);
     }
-
-    .upload-area input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
-    }
-
-    .upload-area .upload-icon { font-size: 28px; margin-bottom: 8px; }
-
-    .upload-area p {
-      color: #8a8a8a;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
     .upload-area.loaded { border-color: #2ecc71; background: rgba(46,204,113,0.04); }
+    .upload-area .upload-icon { font-size: 28px; margin-bottom: 8px; }
+    .upload-area p { color: #8a8a8a; font-size: 13px; line-height: 1.5; }
     .upload-area.loaded p { color: #2ecc71; }
-
-    /* Buttons */
     .btn-primary {
-      background: #ee0000;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 10px 24px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
+      background: #ee0000; color: white; border: none;
+      border-radius: 4px; padding: 10px 24px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background 0.2s; white-space: nowrap;
     }
-
     .btn-primary:hover { background: #cc0000; }
     .btn-primary:disabled { background: #555; cursor: not-allowed; }
-
     .btn-secondary {
-      background: none;
-      border: 1px solid #3a3a3a;
-      border-radius: 4px;
-      color: #aaa;
-      padding: 10px 16px;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
+      background: none; border: 1px solid #3a3a3a; border-radius: 4px;
+      color: #aaa; padding: 10px 16px; font-size: 13px;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
     }
-
     .btn-secondary:hover { border-color: #666; color: #f0f0f0; }
-
-    /* Examples */
     .examples { display: flex; flex-wrap: wrap; gap: 8px; }
-
     .example-btn {
-      background: #2a2a2a;
-      border: 1px solid #3a3a3a;
-      border-radius: 20px;
-      color: #aaa;
-      padding: 4px 12px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
+      background: #2a2a2a; border: 1px solid #3a3a3a;
+      border-radius: 20px; color: #aaa;
+      padding: 4px 12px; font-size: 12px;
+      cursor: pointer; transition: all 0.2s;
     }
-
     .example-btn:hover { border-color: #ee0000; color: #f0f0f0; }
-
-    /* Status badge */
     .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 12px;
+      font-size: 12px; font-weight: 500;
     }
-
     .status-badge.live { background: rgba(46,204,113,0.15); color: #2ecc71; border: 1px solid #2ecc71; }
     .status-badge.report { background: rgba(52,152,219,0.15); color: #3498db; border: 1px solid #3498db; }
-    .status-badge.dot::before { content: '●'; font-size: 8px; }
-
-    /* Response section */
+    .status-badge::before { content: '●'; font-size: 8px; }
     .response-section {
-      background: #1f1f1f;
-      border: 1px solid #3a3a3a;
-      border-radius: 8px;
-      padding: 20px;
-      display: none;
-      flex-direction: column;
-      gap: 12px;
+      background: #1f1f1f; border: 1px solid #3a3a3a;
+      border-radius: 8px; padding: 20px;
+      display: none; flex-direction: column; gap: 12px;
     }
-
     .response-section.visible { display: flex; }
-
     .response-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px;
+      display: flex; align-items: center;
+      justify-content: space-between; flex-wrap: wrap; gap: 8px;
     }
-
     .response-header-left { display: flex; align-items: center; gap: 10px; }
-
     .ns-badge {
-      background: #2a2a2a;
-      border: 1px solid #3a3a3a;
-      border-radius: 12px;
-      padding: 2px 10px;
-      font-size: 12px;
-      color: #aaa;
+      background: #2a2a2a; border: 1px solid #3a3a3a;
+      border-radius: 12px; padding: 2px 10px;
+      font-size: 12px; color: #aaa;
     }
-
     .response-body {
-      font-size: 14px;
-      line-height: 1.7;
-      color: #e0e0e0;
-      white-space: pre-wrap;
-      word-break: break-word;
+      font-size: 14px; line-height: 1.7;
+      color: #e0e0e0; white-space: pre-wrap; word-break: break-word;
     }
-
     .response-body.loading { color: #666; font-style: italic; }
-
     .spinner {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid #333;
-      border-top-color: #ee0000;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #333; border-top-color: #ee0000;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 8px;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .copy-btn {
-      background: none;
-      border: 1px solid #3a3a3a;
-      border-radius: 4px;
-      color: #8a8a8a;
-      padding: 4px 10px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
+      background: none; border: 1px solid #3a3a3a; border-radius: 4px;
+      color: #8a8a8a; padding: 4px 10px; font-size: 12px;
+      cursor: pointer; transition: all 0.2s;
     }
-
     .copy-btn:hover { border-color: #666; color: #f0f0f0; }
-
     footer {
-      text-align: center;
-      padding: 16px;
-      font-size: 12px;
-      color: #555;
-      border-top: 1px solid #2a2a2a;
+      text-align: center; padding: 16px; font-size: 12px;
+      color: #555; border-top: 1px solid #2a2a2a;
     }
-
     footer a { color: #666; text-decoration: none; }
     footer a:hover { color: #aaa; }
   </style>
@@ -318,7 +154,6 @@
 </header>
 
 <main>
-
   <!-- Mode selector -->
   <div class="mode-tabs">
     <button class="mode-tab active" id="tabLive" onclick="switchMode('live')">
@@ -350,7 +185,7 @@
         <button class="example-btn" onclick="setQ('live','why do we have consumer lag')">Consumer lag</button>
         <button class="example-btn" onclick="setQ('live','analyze any issues in my environment')">Full analysis</button>
         <button class="example-btn" onclick="setQ('live','how can I tune kafka for better performance')">Tuning</button>
-        <button class="example-btn" onclick="setQ('live','give me a brief status of the current cluster')">Cluster status</button>
+        <button class="example-btn" onclick="setQ('live','give me a brief status of the current cluster')">Status</button>
       </div>
     </div>
   </div>
@@ -358,54 +193,49 @@
   <!-- Uploaded report panel -->
   <div class="panel" id="panelReport">
     <div class="input-section">
-
-      <!-- Upload area -->
       <div class="field">
-        <label>Strimzi report.sh output</label>
-        <div class="upload-area" id="uploadArea">
-          <input type="file" id="reportFile" accept=".txt,.log,text/plain" onchange="handleFileSelect(event)">
+        <label>Strimzi report.sh ZIP output</label>
+        <div class="upload-area" id="uploadArea" ondragover="onDragOver(event)" ondragleave="onDragLeave()" ondrop="onDrop(event)">
           <div class="upload-icon">&#x1F4C2;</div>
           <p id="uploadText">
-            Drop a report.sh output file here<br>
-            or click to browse (.txt or .log)
+            Drop a Strimzi report.sh ZIP file here<br>
+            or click to browse (.zip)
           </p>
+          <input type="file" id="reportFile" accept=".zip,application/zip" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" onchange="handleFileSelect(event)">
         </div>
       </div>
-
       <div class="field">
         <label>Your question</label>
         <textarea id="questionReport"
-          placeholder="analyze the uploaded report&#10;what issues do you see in the pods&#10;check the kafka events for errors"></textarea>
+          placeholder="analyze the uploaded report and summarize findings&#10;what issues do you see in the kafka cluster&#10;check events for errors"></textarea>
       </div>
-
       <div class="input-row">
         <button class="btn-primary" id="submitReport" onclick="diagnoseReport()" disabled>
           Diagnose from Report
         </button>
-        <button class="btn-secondary" onclick="clearReport()">Clear report</button>
+        <button class="btn-secondary" onclick="clearReport()">Clear</button>
       </div>
-
       <div class="examples">
-        <button class="example-btn" onclick="setQ('report','analyze the uploaded report and summarize findings')">Full analysis</button>
-        <button class="example-btn" onclick="setQ('report','what issues do you see in the pods')">Pod issues</button>
+        <button class="example-btn" onclick="setQ('report','analyze the uploaded report and summarize all findings')">Full analysis</button>
+        <button class="example-btn" onclick="setQ('report','what issues do you see in the kafka cluster pods')">Pod issues</button>
         <button class="example-btn" onclick="setQ('report','check the kafka events for errors and warnings')">Events</button>
         <button class="example-btn" onclick="setQ('report','analyze the kafka topics configuration')">Topics</button>
+        <button class="example-btn" onclick="setQ('report','show me the kafka cluster configuration')">Kafka config</button>
       </div>
     </div>
   </div>
 
-  <!-- Response area (shared) -->
+  <!-- Shared response area -->
   <div class="response-section" id="responseSection">
     <div class="response-header">
       <div class="response-header-left">
-        <span id="modeIndicator" class="status-badge live dot">Live cluster</span>
+        <span id="modeIndicator" class="status-badge live">Live cluster</span>
         <span class="ns-badge" id="nsBadge"></span>
       </div>
       <button class="copy-btn" onclick="copyResponse()">Copy</button>
     </div>
     <div class="response-body" id="responseBody"></div>
   </div>
-
 </main>
 
 <footer>
@@ -415,11 +245,8 @@
 
 <script>
   var currentMode = 'live';
-  var reportContent = null;
+  var selectedFile = null;
 
-  // ----------------------------------------------------------------
-  // Mode switching
-  // ----------------------------------------------------------------
   function switchMode(mode) {
     currentMode = mode;
     document.getElementById('tabLive').className = 'mode-tab' + (mode === 'live' ? ' active' : '');
@@ -428,30 +255,51 @@
     document.getElementById('panelReport').className = 'panel' + (mode === 'report' ? ' visible' : '');
   }
 
-  // ----------------------------------------------------------------
-  // Example questions
-  // ----------------------------------------------------------------
   function setQ(mode, text) {
     switchMode(mode);
     document.getElementById(mode === 'live' ? 'questionLive' : 'questionReport').value = text;
   }
 
-  // ----------------------------------------------------------------
-  // File upload handling
-  // ----------------------------------------------------------------
   function handleFileSelect(event) {
     var file = event.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      reportContent = e.target.result;
-      var area = document.getElementById('uploadArea');
-      var text = document.getElementById('uploadText');
-      area.className = 'upload-area loaded';
-      text.textContent = file.name + ' (' + formatSize(reportContent.length) + ') — ready';
-      document.getElementById('submitReport').disabled = false;
-    };
-    reader.readAsText(file);
+    if (file) loadFile(file);
+  }
+
+  function loadFile(file) {
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      alert('Please select a .zip file (Strimzi report.sh output)');
+      return;
+    }
+    selectedFile = file;
+    document.getElementById('uploadArea').className = 'upload-area loaded';
+    document.getElementById('uploadText').textContent =
+      file.name + ' (' + formatSize(file.size) + ') — ready to upload';
+    document.getElementById('submitReport').disabled = false;
+  }
+
+  function clearReport() {
+    selectedFile = null;
+    document.getElementById('reportFile').value = '';
+    document.getElementById('uploadArea').className = 'upload-area';
+    document.getElementById('uploadText').innerHTML =
+      'Drop a Strimzi report.sh ZIP file here<br>or click to browse (.zip)';
+    document.getElementById('submitReport').disabled = true;
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    document.getElementById('uploadArea').classList.add('dragover');
+  }
+
+  function onDragLeave() {
+    document.getElementById('uploadArea').classList.remove('dragover');
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('uploadArea').classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
   }
 
   function formatSize(bytes) {
@@ -460,37 +308,6 @@
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  function clearReport() {
-    reportContent = null;
-    document.getElementById('reportFile').value = '';
-    document.getElementById('uploadArea').className = 'upload-area';
-    document.getElementById('uploadText').innerHTML =
-      'Drop a report.sh output file here<br>or click to browse (.txt or .log)';
-    document.getElementById('submitReport').disabled = true;
-  }
-
-  // Drag and drop support
-  var uploadArea = document.getElementById('uploadArea');
-  uploadArea.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    uploadArea.classList.add('dragover');
-  });
-  uploadArea.addEventListener('dragleave', function() {
-    uploadArea.classList.remove('dragover');
-  });
-  uploadArea.addEventListener('drop', function(e) {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    var file = e.dataTransfer.files[0];
-    if (file) {
-      var fakeEvent = { target: { files: [file] } };
-      handleFileSelect(fakeEvent);
-    }
-  });
-
-  // ----------------------------------------------------------------
-  // Live cluster diagnosis
-  // ----------------------------------------------------------------
   function diagnoseLive() {
     var question  = document.getElementById('questionLive').value.trim();
     var namespace = document.getElementById('namespaceLive').value.trim();
@@ -509,32 +326,33 @@
       document.getElementById('submitLive').disabled = false;
     })
     .catch(function(err) {
-      showResult('Connection error: ' + err.message, namespace || 'default namespace', false);
+      showResult('Connection error: ' + err.message, 'error', false);
       document.getElementById('submitLive').disabled = false;
     });
   }
 
-  // ----------------------------------------------------------------
-  // Report-based diagnosis
-  // ----------------------------------------------------------------
   function diagnoseReport() {
     var question = document.getElementById('questionReport').value.trim();
     if (!question) { document.getElementById('questionReport').focus(); return; }
-    if (!reportContent) { alert('Please upload a report file first.'); return; }
+    if (!selectedFile) { alert('Please select a ZIP file first.'); return; }
 
-    showLoading('Uploaded report', 'from report', true);
+    showLoading('Uploading ZIP...', 'from report', true);
 
-    // Step 1: upload the report content
+    // Step 1: upload the ZIP as multipart/form-data
+    var formData = new FormData();
+    formData.append('report', selectedFile, selectedFile.name);
+
     fetch('/api/upload-report', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: reportContent
+      body: formData
     })
     .then(function(r) {
-      if (!r.ok) { throw new Error('Upload failed: ' + r.status); }
+      if (!r.ok) { return r.json().then(function(e) { throw new Error(e.error || 'Upload failed'); }); }
       return r.json();
     })
-    .then(function() {
+    .then(function(uploadResult) {
+      showLoading('Analyzing report (' + uploadResult.filesExtracted + ' files)...', 'from report', true);
+
       // Step 2: diagnose using the uploaded report
       return fetch('/api/diagnose-report', {
         method: 'POST',
@@ -553,54 +371,39 @@
     });
   }
 
-  // ----------------------------------------------------------------
-  // UI helpers
-  // ----------------------------------------------------------------
   function showLoading(source, ns, fromReport) {
-    var btn = document.getElementById(fromReport ? 'submitReport' : 'submitLive');
-    btn.disabled = true;
-
-    var section  = document.getElementById('responseSection');
-    var body     = document.getElementById('responseBody');
-    var badge    = document.getElementById('nsBadge');
+    document.getElementById(fromReport ? 'submitReport' : 'submitLive').disabled = true;
+    document.getElementById('responseSection').className = 'response-section visible';
+    document.getElementById('responseBody').className = 'response-body loading';
+    document.getElementById('responseBody').innerHTML = '<span class="spinner"></span>' + source;
+    document.getElementById('nsBadge').textContent = ns;
     var indicator = document.getElementById('modeIndicator');
-
-    section.className = 'response-section visible';
-    body.className = 'response-body loading';
-    body.innerHTML = '<span class="spinner"></span>Analyzing...';
-    badge.textContent = ns;
-
     if (fromReport) {
-      indicator.className = 'status-badge report dot';
+      indicator.className = 'status-badge report';
       indicator.textContent = 'Uploaded report';
     } else {
-      indicator.className = 'status-badge live dot';
+      indicator.className = 'status-badge live';
       indicator.textContent = 'Live cluster';
     }
   }
 
   function showResult(text, ns, fromReport) {
-    var body  = document.getElementById('responseBody');
-    var badge = document.getElementById('nsBadge');
-    body.className = 'response-body';
-    body.textContent = text;
-    badge.textContent = ns;
+    document.getElementById('responseBody').className = 'response-body';
+    document.getElementById('responseBody').textContent = text;
+    document.getElementById('nsBadge').textContent = ns;
   }
 
   function copyResponse() {
-    var text = document.getElementById('responseBody').textContent;
-    navigator.clipboard.writeText(text).then(function() {
+    navigator.clipboard.writeText(document.getElementById('responseBody').textContent).then(function() {
       var btn = document.querySelector('.copy-btn');
       btn.textContent = 'Copied!';
       setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
     });
   }
 
-  // Ctrl+Enter to submit
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && e.ctrlKey) {
-      if (currentMode === 'live') diagnoseLive();
-      else diagnoseReport();
+      if (currentMode === 'live') diagnoseLive(); else diagnoseReport();
     }
   });
 </script>
