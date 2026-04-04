@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -30,13 +31,13 @@ import java.util.zip.ZipInputStream;
  * Both modes use a TWO-PHASE approach:
  *
  * Phase 1 — agent identifies the specific issue and returns JSON:
- *   {"issue": "specific error found", "component": "kafka|connect|debezium|..."}
+ *   {"issue": "specific error found", "component": "kafka|connect|..."}
  *
  * Phase 2 — Java uses the detected issue to search RAG + KCS, then agent
  *   produces the full structured diagnosis enriched with relevant docs and solutions.
  *
- * Since KafkaDiagnosticAgent uses NoChatMemoryProviderSupplier, each call is
- * completely independent — Phase 1 JSON does not contaminate Phase 2 response.
+ * Each phase uses a different UUID as @MemoryId, so LangChain4j gives each
+ * call a completely isolated memory — Phase 1 JSON never contaminates Phase 2.
  */
 @Path("/api")
 public class DiagnosticResource {
@@ -85,7 +86,8 @@ public class DiagnosticResource {
                     "If no issue found: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}",
                     namespace, request.question());
 
-            String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            String p1id = UUID.randomUUID().toString();
+            String phase1Raw = stripThinkBlocks(agent.diagnose(p1id, phase1Prompt));
             LOG.infof("Phase 1 raw: %s", phase1Raw.substring(0, Math.min(300, phase1Raw.length())));
             String detectedIssue = parseIssueFromJson(phase1Raw, request.question());
             LOG.infof("Phase 1 detected issue: %s", detectedIssue);
@@ -94,7 +96,7 @@ public class DiagnosticResource {
             String ragContext = prefetchRAG(detectedIssue);
             String kcsContext = prefetchKCS(detectedIssue);
 
-            // Phase 2: full diagnosis — agent calls tools again independently (no memory)
+            // Phase 2: full diagnosis — fresh memory (different UUID)
             String phase2Prompt = String.format(
                     "[namespace: %s] %s\n\n" +
                     "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state.\n\n" +
@@ -103,7 +105,8 @@ public class DiagnosticResource {
                     "Do not invent documentation links or KCS articles beyond what is provided above.",
                     namespace, request.question(), ragContext, kcsContext);
 
-            String answer = stripThinkBlocks(agent.diagnose(phase2Prompt));
+            String p2id = UUID.randomUUID().toString();
+            String answer = stripThinkBlocks(agent.diagnose(p2id, phase2Prompt));
             return Response.ok(new DiagnoseResponse(answer, namespace, false)).build();
 
         } catch (Exception e) {
@@ -181,7 +184,8 @@ public class DiagnosticResource {
                     "If no issue found: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}\n\n" +
                     "=== REPORT CONTENT ===\n" + reportStr;
 
-            String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            String p1id = UUID.randomUUID().toString();
+            String phase1Raw = stripThinkBlocks(agent.diagnose(p1id, phase1Prompt));
             LOG.infof("Phase 1 raw: %s", phase1Raw.substring(0, Math.min(300, phase1Raw.length())));
             String detectedIssue = parseIssueFromJson(phase1Raw, question);
             LOG.infof("Phase 1 detected issue: %s", detectedIssue);
@@ -190,7 +194,7 @@ public class DiagnosticResource {
             String ragContext = prefetchRAG(detectedIssue);
             String kcsContext = prefetchKCS(detectedIssue);
 
-            // Phase 2: full diagnosis with enriched context
+            // Phase 2: full diagnosis — fresh memory (different UUID)
             String q = "[report-mode: true] " + question + "\n\n" +
                     "The following content was extracted from the uploaded ZIP report.\n" +
                     "Do NOT say files are missing — if a section shows '(not present in report)'\n" +
@@ -201,7 +205,8 @@ public class DiagnosticResource {
                     "Do not use KubernetesTool." +
                     " Do not invent documentation links or KCS articles beyond what is provided above.";
 
-            String answer = stripThinkBlocks(agent.diagnose(q));
+            String p2id = UUID.randomUUID().toString();
+            String answer = stripThinkBlocks(agent.diagnose(p2id, q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();
 
         } catch (Exception e) {

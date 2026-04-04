@@ -6,6 +6,7 @@ import com.redhat.kafka.diag.tools.RAGQueryTool;
 import com.redhat.kafka.diag.tools.KCSSearchTool;
 import com.redhat.kafka.diag.tools.ReportUploadTool;
 import com.redhat.kafka.diag.tools.DebeziumTool;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.RegisterAiService;
@@ -14,23 +15,20 @@ import jakarta.enterprise.context.ApplicationScoped;
 /**
  * Main diagnostic agent powered by LangChain4j.
  *
- * NoChatMemoryProviderSupplier ensures each call to diagnose() is completely
- * independent — no conversation history is carried between calls.
- * This is required for the two-phase approach in DiagnosticResource:
- * Phase 1 identifies the issue (JSON), Phase 2 produces the full diagnosis.
- * Without this, Phase 2 would repeat the JSON from Phase 1.
+ * Uses @MemoryId to isolate conversation history per call.
+ * Each invocation with a unique memoryId gets a clean memory slate,
+ * which is required for the two-phase approach:
+ * - Phase 1: agent identifies the issue (returns JSON)
+ * - Phase 2: agent produces the full diagnosis (different memoryId = clean slate)
  */
-@RegisterAiService(
-    tools = {
-        KubernetesTool.class,
-        StrimziReportTool.class,
-        RAGQueryTool.class,
-        KCSSearchTool.class,
-        ReportUploadTool.class,
-        DebeziumTool.class
-    },
-    chatMemoryProviderSupplier = RegisterAiService.NoChatMemoryProviderSupplier.class
-)
+@RegisterAiService(tools = {
+    KubernetesTool.class,
+    StrimziReportTool.class,
+    RAGQueryTool.class,
+    KCSSearchTool.class,
+    ReportUploadTool.class,
+    DebeziumTool.class
+})
 @ApplicationScoped
 public interface KafkaDiagnosticAgent {
 
@@ -67,5 +65,5 @@ public interface KafkaDiagnosticAgent {
               RECOMMENDATIONS:
               KCS ARTICLES:
             """)
-    String diagnose(@UserMessage String question);
+    String diagnose(@MemoryId String memoryId, @UserMessage String question);
 }
