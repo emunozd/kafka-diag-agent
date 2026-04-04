@@ -10,6 +10,7 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
+import io.smallrye.common.annotation.Blocking;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -141,6 +142,7 @@ public class DiagnosticResource {
      */
     @POST
     @Path("/diagnose-report")
+    @Blocking
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
     public Response diagnoseReport(
