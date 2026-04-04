@@ -27,10 +27,19 @@ import java.util.zip.ZipInputStream;
  * POST /api/diagnose-report  — diagnose using an uploaded Strimzi report.sh ZIP
  * GET  /api/health           — health check
  *
- * In report mode, ALL relevant content is pre-extracted from the ZIP and
- * injected directly into the prompt. The agent does not need to call
- * analyzeUploadedReport tools — it receives the full context upfront.
- * This avoids the model hallucinating "no files found" for existing resources.
+ * Both modes use a TWO-PHASE approach:
+ *
+ * Phase 1 — Issue identification:
+ *   The agent analyzes the cluster data or report content and returns a JSON
+ *   object identifying the specific technical issue found.
+ *
+ * Phase 2 — Enriched diagnosis:
+ *   The identified issue is used to search RAG documentation and KCS articles.
+ *   The agent then produces the final structured diagnosis enriched with
+ *   relevant documentation and known solutions.
+ *
+ * This ensures KCS and RAG searches are based on the actual issue found,
+ * not on the user's generic question.
  */
 @Path("/api")
 public class DiagnosticResource {
@@ -39,7 +48,6 @@ public class DiagnosticResource {
 
     private static final int MAX_FILE_CHARS = 50_000;
     private static final int MAX_FILES = 200;
-    // Max chars per section injected into prompt — keeps total context manageable
     private static final int MAX_SECTION_CHARS = 1500;
 
     private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
@@ -52,7 +60,7 @@ public class DiagnosticResource {
     @Inject KCSSearchTool kcsSearchTool;
 
     // ----------------------------------------------------------------
-    // POST /api/diagnose — live cluster mode
+    // POST /api/diagnose — live cluster mode (two-phase)
     // ----------------------------------------------------------------
 
     @POST
@@ -69,21 +77,39 @@ public class DiagnosticResource {
         String namespace = resolveNamespace(request.namespace());
         LOG.infof("Diagnosing (live): namespace=%s question=%s", namespace, request.question());
 
-        String ragContext = prefetchRAG(request.question());
-        String kcsContext = prefetchKCS(request.question());
-
-        String question = String.format(
-                "[namespace: %s] %s" +
-                " — MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state." +
-                " Then use the following pre-fetched context to enrich your response:\n\n" +
-                "=== PRE-FETCHED DOCUMENTATION ===\n%s\n\n" +
-                "=== PRE-FETCHED KCS ARTICLES ===\n%s\n\n" +
-                "Do not invent documentation links or KCS articles beyond what is provided above.",
-                namespace, request.question(), ragContext, kcsContext);
-
         try {
-            String answer = stripThinkBlocks(agent.diagnose(question));
+            // Phase 1: agent inspects cluster and identifies the specific issue
+            String phase1Prompt = String.format(
+                    "[namespace: %s] %s\n\n" +
+                    "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to inspect the cluster.\n" +
+                    "Then return ONLY a JSON object — no other text — with this exact format:\n" +
+                    "{\"issue\": \"<specific technical issue found, e.g. KafkaNodePool missing controller role, " +
+                    "consumer lag on topic X, MirrorMaker2 connector FAILED, pod CrashLoopBackOff>\", " +
+                    "\"component\": \"<kafka|connect|debezium|topic|nodepool|pod|mirrormaker>\"}\n" +
+                    "If no issue found, return: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}",
+                    namespace, request.question());
+
+            String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            String detectedIssue = parseIssueFromJson(phase1Raw, request.question());
+            LOG.infof("Phase 1 detected issue: %s", detectedIssue);
+
+            // Phase 2: search RAG and KCS with the detected issue
+            String ragContext = prefetchRAG(detectedIssue);
+            String kcsContext = prefetchKCS(detectedIssue);
+
+            // Phase 2: full diagnosis with enriched context
+            String phase2Prompt = String.format(
+                    "[namespace: %s] %s\n\n" +
+                    "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state.\n\n" +
+                    "The following documentation and KCS articles are relevant to the issue found:\n\n" +
+                    "=== PRE-FETCHED DOCUMENTATION ===\n%s\n\n" +
+                    "=== PRE-FETCHED KCS ARTICLES ===\n%s\n\n" +
+                    "Do not invent documentation links or KCS articles beyond what is provided above.",
+                    namespace, request.question(), ragContext, kcsContext);
+
+            String answer = stripThinkBlocks(agent.diagnose(phase2Prompt));
             return Response.ok(new DiagnoseResponse(answer, namespace, false)).build();
+
         } catch (Exception e) {
             LOG.errorf(e, "Error during diagnosis");
             return Response.serverError()
@@ -93,7 +119,7 @@ public class DiagnosticResource {
     }
 
     // ----------------------------------------------------------------
-    // POST /api/diagnose-report — report-based diagnosis
+    // POST /api/diagnose-report — report-based diagnosis (two-phase)
     // ----------------------------------------------------------------
 
     @POST
@@ -130,26 +156,16 @@ public class DiagnosticResource {
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
             // Step 2: pre-extract all relevant sections from the ZIP
-            String kafkaSection      = truncate(extractByPrefix(files, "kafkas/"), MAX_SECTION_CHARS);
-            String podsSection       = truncate(extractByPrefix(files, "pods/"), MAX_SECTION_CHARS);
-            String eventsSection     = truncate(extractByPrefix(files, "events/"), MAX_SECTION_CHARS);
-            String connectSection    = truncate(extractByPrefix(files, "kafkaconnects/"), MAX_SECTION_CHARS);
-            String connectorSection  = truncate(extractByPrefix(files, "kafkaconnectors/"), MAX_SECTION_CHARS);
-            String nodepoolSection   = truncate(extractByPrefix(files, "kafkanodepools/"), MAX_SECTION_CHARS);
-            String topicsSection     = truncate(extractByPrefix(files, "kafkatopics/"), MAX_SECTION_CHARS);
-            String logsSection       = truncate(extractByPrefix(files, "logs/"), MAX_SECTION_CHARS);
+            String kafkaSection     = truncate(extractByPrefix(files, "kafkas/"), MAX_SECTION_CHARS);
+            String podsSection      = truncate(extractByPrefix(files, "pods/"), MAX_SECTION_CHARS);
+            String eventsSection    = truncate(extractByPrefix(files, "events/"), MAX_SECTION_CHARS);
+            String connectSection   = truncate(extractByPrefix(files, "kafkaconnects/"), MAX_SECTION_CHARS);
+            String connectorSection = truncate(extractByPrefix(files, "kafkaconnectors/"), MAX_SECTION_CHARS);
+            String nodepoolSection  = truncate(extractByPrefix(files, "kafkanodepools/"), MAX_SECTION_CHARS);
+            String topicsSection    = truncate(extractByPrefix(files, "kafkatopics/"), MAX_SECTION_CHARS);
+            String logsSection      = truncate(extractByPrefix(files, "logs/"), MAX_SECTION_CHARS);
 
-            // Step 3: extract issue from kafka or connector YAML for targeted RAG/KCS query
-            String issueQuery = extractIssue(kafkaSection,
-                                extractIssue(connectorSection,
-                                extractIssue(connectSection, question)));
-            LOG.infof("Using issue query for RAG/KCS: %s", issueQuery);
-
-            // Step 4: pre-fetch RAG and KCS
-            String ragContext = prefetchRAG(issueQuery);
-            String kcsContext = prefetchKCS(issueQuery);
-
-            // Step 5: build enriched prompt with all pre-extracted content
+            // Step 3: build report content string
             StringBuilder reportContent = new StringBuilder();
             appendSection(reportContent, "KAFKA CLUSTER", kafkaSection);
             appendSection(reportContent, "KAFKA NODE POOLS", nodepoolSection);
@@ -160,11 +176,31 @@ public class DiagnosticResource {
             appendSection(reportContent, "KAFKA TOPICS", topicsSection);
             appendSection(reportContent, "LOGS", logsSection);
 
+            String reportStr = reportContent.toString();
+
+            // Phase 1: agent identifies the specific issue from report content
+            String phase1Prompt = "Analyze the following Kafka cluster report content.\n" +
+                    "Return ONLY a JSON object — no other text — with this exact format:\n" +
+                    "{\"issue\": \"<specific technical issue found, e.g. KafkaNodePool missing controller role, " +
+                    "Debezium Oracle connector FAILED, pod CrashLoopBackOff, consumer lag>\", " +
+                    "\"component\": \"<kafka|connect|debezium|topic|nodepool|pod|mirrormaker>\"}\n" +
+                    "If no issue found, return: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}\n\n" +
+                    "=== REPORT CONTENT ===\n" + reportStr;
+
+            String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            String detectedIssue = parseIssueFromJson(phase1Raw, question);
+            LOG.infof("Phase 1 detected issue: %s", detectedIssue);
+
+            // Phase 2: search RAG and KCS with the detected issue
+            String ragContext = prefetchRAG(detectedIssue);
+            String kcsContext = prefetchKCS(detectedIssue);
+
+            // Phase 2: full diagnosis with enriched context
             String q = "[report-mode: true] " + question + "\n\n" +
                     "The following content was extracted directly from the uploaded ZIP report.\n" +
                     "Use it to answer the question. Do NOT say files are missing — if a section\n" +
-                    "is empty below, that resource does not exist in the report.\n\n" +
-                    "=== REPORT CONTENT ===\n" + reportContent + "\n\n" +
+                    "shows '(not present in report)' that resource does not exist in the report.\n\n" +
+                    "=== REPORT CONTENT ===\n" + reportStr + "\n\n" +
                     "=== PRE-FETCHED DOCUMENTATION ===\n" + ragContext + "\n\n" +
                     "=== PRE-FETCHED KCS ARTICLES ===\n" + kcsContext + "\n\n" +
                     "Do not use KubernetesTool." +
@@ -192,6 +228,49 @@ public class DiagnosticResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response health() {
         return Response.ok("{\"status\":\"ok\",\"agent\":\"kafka-diag-agent\"}").build();
+    }
+
+    // ----------------------------------------------------------------
+    // Phase 1 — JSON issue parsing
+    // ----------------------------------------------------------------
+
+    /**
+     * Parse the issue identified by the agent in Phase 1.
+     * The agent returns a JSON like: {"issue": "KafkaNodePool missing controller role", "component": "nodepool"}
+     * We extract the "issue" field to use as RAG/KCS query.
+     * Falls back to the user question if parsing fails.
+     */
+    private String parseIssueFromJson(String raw, String fallback) {
+        if (raw == null || raw.isBlank()) return fallback;
+
+        // Strip markdown code blocks if present
+        String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+
+        // Extract "issue" field value
+        int issueIdx = cleaned.indexOf("\"issue\"");
+        if (issueIdx == -1) issueIdx = cleaned.indexOf("'issue'");
+        if (issueIdx == -1) return fallback;
+
+        int colonIdx = cleaned.indexOf(":", issueIdx);
+        if (colonIdx == -1) return fallback;
+
+        // Find opening quote
+        int startQuote = cleaned.indexOf("\"", colonIdx);
+        if (startQuote == -1) startQuote = cleaned.indexOf("'", colonIdx);
+        if (startQuote == -1) return fallback;
+
+        char quoteChar = cleaned.charAt(startQuote);
+        int endQuote = cleaned.indexOf(quoteChar, startQuote + 1);
+        if (endQuote == -1) return fallback;
+
+        String issue = cleaned.substring(startQuote + 1, endQuote).trim();
+
+        if (issue.isBlank() || issue.equalsIgnoreCase("cluster healthy")) {
+            LOG.infof("No specific issue detected — using user question as fallback");
+            return fallback;
+        }
+
+        return issue;
     }
 
     // ----------------------------------------------------------------
@@ -228,66 +307,6 @@ public class DiagnosticResource {
             sb.append(content);
         }
         sb.append("\n");
-    }
-
-    // ----------------------------------------------------------------
-    // Issue extraction
-    // ----------------------------------------------------------------
-
-    /**
-     * Extract the most relevant issue from YAML content.
-     * Looks for conditions.message, conditions.reason, or NotReady type.
-     * Falls back to the provided fallback string if nothing specific is found.
-     */
-    private String extractIssue(String content, String fallback) {
-        if (content == null || content.isBlank()) return fallback;
-
-        String[] lines = content.split("\n");
-
-        // Pass 1 — look for message: field and collect multiline value
-        for (int i = 0; i < lines.length; i++) {
-            String trimmed = lines[i].trim();
-            if (trimmed.startsWith("message:")) {
-                StringBuilder msg = new StringBuilder();
-                String sameLine = trimmed.substring(8).trim()
-                        .replace("'", "").replace("\"", "").trim();
-                msg.append(sameLine);
-
-                int currentIndent = lines[i].indexOf("message:");
-                for (int j = i + 1; j < lines.length && j < i + 5; j++) {
-                    String next = lines[j];
-                    if (next.isBlank()) break;
-                    int nextIndent = next.length() - next.stripLeading().length();
-                    if (nextIndent > currentIndent) {
-                        msg.append(" ").append(next.trim()
-                                .replace("'", "").replace("\"", ""));
-                    } else {
-                        break;
-                    }
-                }
-
-                String result = msg.toString().trim();
-                if (result.length() > 20 && result.contains(" ")) {
-                    if (result.length() > 200) result = result.substring(0, 200);
-                    LOG.infof("Extracted issue message: %s", result);
-                    return result;
-                }
-            }
-        }
-
-        // Pass 2 — fallback to reason field
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("reason:")) {
-                String reason = trimmed.substring(7).trim();
-                if (!reason.isBlank() && !reason.equals("null") && !reason.equals("None")) {
-                    LOG.infof("Extracted issue reason: %s", reason);
-                    return reason;
-                }
-            }
-        }
-
-        return fallback;
     }
 
     // ----------------------------------------------------------------
