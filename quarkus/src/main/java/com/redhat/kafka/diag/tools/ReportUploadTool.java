@@ -157,25 +157,37 @@ public class ReportUploadTool {
         StringBuilder sb = new StringBuilder();
         sb.append("=== UPLOADED REPORT SUMMARY ===\n\n");
         sb.append("Total files: ").append(files.size()).append("\n\n");
-
+    
         // Group by directory
         Map<String, Integer> dirs = new TreeMap<>();
         for (String path : files.keySet()) {
             int slash = path.lastIndexOf('/');
             String dir = slash >= 0 ? path.substring(0, slash) : "(root)";
-            // Get the last meaningful directory segment
             int prevSlash = dir.lastIndexOf('/');
             String shortDir = prevSlash >= 0 ? dir.substring(prevSlash + 1) : dir;
             dirs.merge(shortDir, 1, Integer::sum);
         }
-
+    
         sb.append("Contents:\n");
         for (Map.Entry<String, Integer> e : dirs.entrySet()) {
             sb.append("  ").append(e.getKey())
               .append(": ").append(e.getValue()).append(" file(s)\n");
         }
-
-        sb.append("\nAsk about: kafka, topics, pods, events, connect, mirror, secrets, configmaps, roles, nodes");
+    
+        // List key Kafka resources explicitly so the agent knows what to query
+        sb.append("\nKey resources detected:\n");
+        for (String path : files.keySet()) {
+            if (path.startsWith("kafkas/") ||
+                path.startsWith("kafkaconnects/") ||
+                path.startsWith("kafkaconnectors/") ||
+                path.startsWith("kafkanodepools/") ||
+                path.startsWith("kafkatopics/") ||
+                path.equals("events/events.txt")) {
+                sb.append("  - ").append(path).append("\n");
+            }
+        }
+    
+        sb.append("\nAsk about: kafka, topics, pods, events, connect, connector, mirror, secrets, configmaps, roles, nodes, logs");
         return sb.toString();
     }
 
