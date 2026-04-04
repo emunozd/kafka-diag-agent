@@ -294,12 +294,20 @@ public class PDFIndexer {
     }
 
     private String extractVersion(Path pdfPath, Path basePath) {
-        // /pdfdata/streams-3.1/doc.pdf → parent is streams-3.1
+        // New structure: /pdfdata/streams/3.1/doc.pdf → "streams/3.1"
+        // Old structure: /pdfdata/streams-3.1/doc.pdf → "streams-3.1"
         Path parent = pdfPath.getParent();
-        if (parent != null && !parent.equals(basePath)) {
-            return parent.getFileName().toString();
+        if (parent == null || parent.equals(basePath)) return "unknown";
+    
+        // Check if parent is a version folder (e.g. 3.1, 3.2.7)
+        Path grandParent = parent.getParent();
+        if (grandParent != null && !grandParent.equals(basePath)) {
+            // Two levels deep: product/version
+            return grandParent.getFileName().toString() + "/" + parent.getFileName().toString();
         }
-        return "unknown";
+    
+        // One level deep: legacy folder name like streams-3.1
+        return parent.getFileName().toString();
     }
 
     // ----------------------------------------------------------------

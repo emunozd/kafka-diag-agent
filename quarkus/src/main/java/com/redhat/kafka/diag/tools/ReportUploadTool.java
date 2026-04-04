@@ -101,16 +101,18 @@ public class ReportUploadTool {
     private String mapAspectToPrefix(String aspect) {
         if (aspect.contains("kafka") && !aspect.contains("topic") &&
             !aspect.contains("connect") && !aspect.contains("mirror")) return "kafkas/";
-        if (aspect.contains("topic"))   return "kafkatopics/";
+        if (aspect.contains("topic"))      return "kafkatopics/";
         if (aspect.contains("pod") || aspect.contains("log")) return "pods/";
-        if (aspect.contains("event"))   return "events/";
+        if (aspect.contains("event"))      return "events/";
+        if (aspect.contains("connector"))  return "kafkaconnectors/";
         if (aspect.contains("connect") && !aspect.contains("mirror")) return "kafkaconnects/";
-        if (aspect.contains("mirror"))  return "kafkamirrormaker";
-        if (aspect.contains("secret"))  return "secrets/";
-        if (aspect.contains("service")) return "services/";
-        if (aspect.contains("config"))  return "configmaps/";
-        if (aspect.contains("role"))    return "clusterroles/";
-        if (aspect.contains("node"))    return "kafkanodepools/";
+        if (aspect.contains("mirror"))     return "kafkamirrormaker";
+        if (aspect.contains("secret"))     return "secrets/";
+        if (aspect.contains("service"))    return "services/";
+        if (aspect.contains("config"))     return "configmaps/";
+        if (aspect.contains("role"))       return "clusterroles/";
+        if (aspect.contains("node"))       return "kafkanodepools/";
+        if (aspect.contains("debezium"))   return "kafkaconnectors/";
         return null;
     }
 
