@@ -85,7 +85,7 @@ public class PDFWatcher {
 
         LOG.infof("PDF watcher started — scanning %s every %ds", basePath, intervalSeconds);
 
-        // Delay first scan by 2x the interval to let the startup indexing finish first
+        // Delay first scan by 10x the interval to let the startup indexing finish first
         scheduler.scheduleAtFixedRate(
                 this::scan,
                 intervalSeconds * 10,
