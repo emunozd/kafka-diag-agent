@@ -113,6 +113,7 @@ public class DiagnosticResource {
         }
 
         try {
+            // Step 1: extract ZIP contents
             Map<String, String> files = extractZipContents(
                     java.nio.file.Files.newInputStream(zipFile.uploadedFile()));
 
@@ -125,14 +126,16 @@ public class DiagnosticResource {
             ReportUploadTool.setReportFiles(files);
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
-            // Extract issue from kafka YAML to build a specific RAG/KCS query
+            // Step 2: extract specific issue from kafka YAML for targeted RAG/KCS query
             String kafkaContent = extractByPrefix(files, "kafkas/");
             String issueQuery   = extractIssue(kafkaContent, question);
+            LOG.infof("Using issue query for RAG/KCS: %s", issueQuery);
 
-            // Pre-fetch RAG and KCS before calling the agent
+            // Step 3: pre-fetch RAG and KCS with the specific issue
             String ragContext = prefetchRAG(issueQuery);
             String kcsContext = prefetchKCS(issueQuery);
 
+            // Step 4: invoke agent with enriched context
             String q = "[report-mode: true] " + question +
                     " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
                     " Then use the following pre-fetched context to enrich your response:\n\n" +
@@ -169,10 +172,6 @@ public class DiagnosticResource {
     // Pre-fetch helpers
     // ----------------------------------------------------------------
 
-    /**
-     * Pre-fetch RAG documentation context for a given query.
-     * Called before invoking the agent so context is always available.
-     */
     private String prefetchRAG(String query) {
         try {
             String result = ragQueryTool.queryDocumentation(query);
@@ -184,10 +183,6 @@ public class DiagnosticResource {
         }
     }
 
-    /**
-     * Pre-fetch KCS articles for a given query.
-     * Called before invoking the agent so articles are always available.
-     */
     private String prefetchKCS(String query) {
         try {
             String result = kcsSearchTool.searchKCS(query);
@@ -200,42 +195,77 @@ public class DiagnosticResource {
     }
 
     /**
-     * Extract the most relevant issue description from the kafka YAML content.
-     * Looks for condition messages and reason fields that describe the problem.
-     * Falls back to the original question if nothing specific is found.
+     * Extract the most relevant issue from the kafka YAML conditions.
+     *
+     * The Strimzi YAML conditions block looks like:
+     *   conditions:
+     *     message: 'The Kafka cluster ... is invalid: [At least one KafkaNodePool
+     *       with the controller role...]'
+     *     reason: InvalidResourceException
+     *     type: NotReady
+     *
+     * The message may span multiple lines (YAML block scalar or flow scalar).
+     * We join continuation lines until we hit the next key or end of content.
      */
     private String extractIssue(String kafkaContent, String fallback) {
         if (kafkaContent == null || kafkaContent.isBlank()) return fallback;
-    
-        // Prioritize message field — it has the specific error text
-        for (String line : kafkaContent.split("\n")) {
-            String trimmed = line.trim();
+
+        String[] lines = kafkaContent.split("\n");
+
+        // Pass 1 — look for message: field and collect multiline value
+        for (int i = 0; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
             if (trimmed.startsWith("message:")) {
-                String msg = trimmed.substring(8).trim().replace("'", "");
-                if (!msg.isBlank() && msg.length() > 15) {
-                    LOG.infof("Extracted issue from kafka YAML message: %s", msg);
-                    return msg;
+                StringBuilder msg = new StringBuilder();
+                // Value on the same line
+                String sameLine = trimmed.substring(8).trim()
+                        .replace("'", "").replace("\"", "").trim();
+                msg.append(sameLine);
+
+                // Collect continuation lines (indented more than current)
+                int currentIndent = lines[i].indexOf("message:");
+                for (int j = i + 1; j < lines.length && j < i + 5; j++) {
+                    String next = lines[j];
+                    if (next.isBlank()) break;
+                    int nextIndent = next.length() - next.stripLeading().length();
+                    // Continuation line is more indented than the key
+                    if (nextIndent > currentIndent) {
+                        msg.append(" ").append(next.trim()
+                                .replace("'", "").replace("\"", ""));
+                    } else {
+                        break;
+                    }
+                }
+
+                String result = msg.toString().trim();
+                // Only use if meaningful (not just a cluster name)
+                if (result.length() > 20 && result.contains(" ")) {
+                    // Truncate to 200 chars for embedding
+                    if (result.length() > 200) result = result.substring(0, 200);
+                    LOG.infof("Extracted issue from kafka YAML message: %s", result);
+                    return result;
                 }
             }
         }
-    
-        // Fallback to reason
-        for (String line : kafkaContent.split("\n")) {
+
+        // Pass 2 — fallback to reason field
+        for (String line : lines) {
             String trimmed = line.trim();
             if (trimmed.startsWith("reason:")) {
                 String reason = trimmed.substring(7).trim();
-                if (!reason.isBlank()) {
+                if (!reason.isBlank() && !reason.equals("null")) {
                     LOG.infof("Extracted issue from kafka YAML reason: %s", reason);
                     return reason;
                 }
             }
         }
-    
+
+        LOG.infof("No issue extracted from kafka YAML — using fallback: %s", fallback);
         return fallback;
     }
 
     /**
-     * Extract content for files matching a directory prefix.
+     * Extract and concatenate content for all files matching a directory prefix.
      */
     private String extractByPrefix(Map<String, String> files, String prefix) {
         StringBuilder sb = new StringBuilder();
