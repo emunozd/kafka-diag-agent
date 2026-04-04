@@ -24,12 +24,18 @@
 
 ## How it works
 
-The agent receives a natural language question and uses tool calling to:
+The agent receives a natural language question and operates in two modes:
 
-1. **Inspect the live cluster** — queries Kafka CRDs, pods, events, and logs via the Kubernetes API (no `oc` binary required — uses the pod's ServiceAccount)
-2. **Search the documentation** — queries ChromaDB for the most relevant chunks from the indexed Red Hat Streams PDFs
-3. **Search KCS** — provides a direct link to relevant Red Hat Knowledge Base articles
-4. **Synthesize** — combines all sources into a structured diagnosis: Summary → Findings → Recommendations
+**Live cluster mode** — queries Kafka CRDs, pods, events, and logs via the
+Kubernetes API (no `oc` binary required), then enriches with RAG documentation.
+
+**Report mode** — accepts a Strimzi `report.sh` ZIP file uploaded via the Web UI,
+extracts all YAML/text files, and diagnoses without direct cluster access.
+
+In both modes the agent:
+1. Gathers cluster data (live or from ZIP)
+2. Searches the ChromaDB knowledge base for relevant documentation chunks
+3. Returns a structured diagnosis: Summary → Findings → Documentation Context → Recommendations
 
 ---
 
@@ -42,7 +48,7 @@ helm install kafka-diag ./helm/ \
   --set huggingface.token=hf_xxx
 ```
 
-### Option B — Quarkus app only with external LLM (Claude, OpenAI, etc.)
+### Option B — Quarkus app only with external LLM
 
 ```bash
 helm install kafka-diag ./helm/ \
@@ -60,21 +66,22 @@ helm install kafka-diag ./helm/ \
 kafka-diag-agent/
 ├── helm/                         ← Helm chart (full infrastructure)
 │   ├── Chart.yaml
-│   ├── values.yaml               ← defaults (local GPU mode)
+│   ├── values.yaml
 │   ├── values-external-llm.yaml
 │   └── templates/
 ├── quarkus/                      ← Java app (Quarkus + LangChain4j)
 │   ├── pom.xml
 │   └── src/main/java/com/redhat/kafka/diag/
 │       ├── agent/                ← KafkaDiagnosticAgent (LangChain4j AI service)
-│       ├── config/               ← AgentConfig (typed config mapping)
+│       ├── config/               ← AgentConfig
 │       ├── rag/                  ← EmbeddingClient, ChromaDBClient, PDFIndexer, PDFWatcher
-│       ├── resource/             ← DiagnosticResource (REST endpoint)
-│       └── tools/                ← KubernetesTool, RAGQueryTool, KCSSearchTool, ...
+│       ├── resource/             ← DiagnosticResource (REST endpoints)
+│       └── tools/                ← KubernetesTool, RAGQueryTool, ReportUploadTool, ...
 └── docs/                         ← Per-phase deployment and implementation guides
     ├── phase-1-infrastructure.md
     ├── phase-2-quarkus-app.md
-    └── phase-3-rag.md
+    ├── phase-3-rag.md
+    └── phase-4-web-ui.md
 ```
 
 ---
@@ -84,46 +91,44 @@ kafka-diag-agent/
 | Phase | Status | Description |
 |-------|--------|-------------|
 | [Phase 1](docs/phase-1-infrastructure.md) | ✅ Complete | Base infrastructure: models, ChromaDB, RBAC |
-| [Phase 2](docs/phase-2-quarkus-app.md) | ✅ Complete | Quarkus app + Kubernetes API tools (no `oc` binary) |
+| [Phase 2](docs/phase-2-quarkus-app.md) | ✅ Complete | Quarkus app + Kubernetes API tools |
 | [Phase 3](docs/phase-3-rag.md) | ✅ Complete | RAG over documentation PDFs + SHA-256 incremental indexing |
-| Phase 4 | Pending | Web UI v2 + report.sh upload + namespace override |
+| [Phase 4](docs/phase-4-web-ui.md) | ✅ Complete | Web UI v2 + Strimzi report.sh ZIP upload + RAG citation |
 | Phase 5 | Pending | KCS API integration + dynamic PDF watcher |
 | Phase 6 | Pending | Debezium diagnostics + final polish |
 
 ---
 
-## Prerequisites
-
-- OpenShift Container Platform (CRC is valid for development)
-- RHOAI 3.3 installed
-- NVIDIA GPU with CUDA 13.0+ (for Option A — tested on RTX 5060 Ti)
-- Helm 3
-- `oc` CLI authenticated
-- HuggingFace token (for model downloads)
-
----
-
 ## Example queries
 
+**Live cluster mode:**
 ```
-"give me a brief status of the current cluster"
-"why is mirrormaker not working"
-"how is my current kafka architecture"
-"how can I tune kafka for better performance and throughput"
-"why do we have consumer lag"
-"analyze any issues in my environment"
-"analyze my kafka cluster in namespace my-ns"
+give me a brief status of the current cluster
+why is mirrormaker not working
+why do we have consumer lag
+analyze any issues in my environment
+how can I tune kafka for better performance
+```
+
+**Report mode (upload a Strimzi report.sh ZIP):**
+```
+analyze the uploaded report and summarize all findings
+what issues do you see in the kafka cluster
+check the kafka events for errors and warnings
+show me the kafka cluster configuration
 ```
 
 ---
 
 ## Key lessons learned
 
-- **RTX 5060 Ti (CUDA 13.0)**: requires `rhaiis/vllm-cuda-rhel9:3.3.0` — earlier versions fail with Error 803
-- **vLLM port**: changed to `8000` in RHOAI 3.3 (was `8080`)
-- **Qwen3 tool calling**: requires `--enable-auto-tool-choice --tool-call-parser=hermes` in the ServingRuntime
-- **KServe headless service**: does not work for embeddings — create a separate ClusterIP Service on port 8000
+- **RTX 5060 Ti (CUDA 13.0)**: requires `rhaiis/vllm-cuda-rhel9:3.3.0`
+- **vLLM port**: changed to `8000` in RHOAI 3.3
+- **Qwen3 tool calling**: requires `--enable-auto-tool-choice --tool-call-parser=hermes`
+- **KServe headless service**: does not work for embeddings — create a separate ClusterIP Service
 - **ChromaDB 1.0.0**: requires full tenant/database path in all API v2 routes
-- **No `oc` binary in pods**: use Fabric8 `OpenShiftClient` injected via CDI instead
 - **PDFBox 3.x**: `PDDocument.load()` removed — use `Loader.loadPDF(new RandomAccessReadBufferedFile(file))`
-- **Java virtual threads + HttpClient**: use `HttpURLConnection` instead to avoid body not being sent
+- **Java virtual threads + HttpClient**: use `HttpURLConnection` instead
+- **ThreadLocal across requests**: doesn't work — combine upload + diagnose in single request
+- **max-model-len**: must be increased to 14000 for multi-tool-call sessions (`--gpu-memory-utilization=0.90`)
+- **Stale ReplicaSets**: after patching ServingRuntime, scale the correct RS manually if pod keeps old args
