@@ -95,6 +95,8 @@
       cursor: pointer; transition: all 0.2s;
     }
     .example-btn:hover { border-color: #ee0000; color: #f0f0f0; }
+    .example-btn.debezium { border-color: #8b5cf6; color: #a78bfa; }
+    .example-btn.debezium:hover { border-color: #a78bfa; color: #c4b5fd; background: rgba(139,92,246,0.1); }
     .status-badge {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 3px 10px; border-radius: 12px;
@@ -146,15 +148,12 @@
   </style>
 </head>
 <body>
-
 <header>
   <span class="rh-logo">RH</span>
   <h1>Kafka Diagnostic Agent</h1>
   <span>AMQ Streams &middot; Qwen3-8B + RAG</span>
 </header>
-
 <main>
-  <!-- Mode selector -->
   <div class="mode-tabs">
     <button class="mode-tab active" id="tabLive" onclick="switchMode('live')">
       &#x2601; Live Cluster
@@ -186,6 +185,7 @@
         <button class="example-btn" onclick="setQ('live','analyze any issues in my environment')">Full analysis</button>
         <button class="example-btn" onclick="setQ('live','how can I tune kafka for better performance')">Tuning</button>
         <button class="example-btn" onclick="setQ('live','give me a brief status of the current cluster')">Status</button>
+        <button class="example-btn debezium" onclick="setQ('live','check debezium connectors status and issues')">&#x1F7E3; Debezium</button>
       </div>
     </div>
   </div>
@@ -221,6 +221,7 @@
         <button class="example-btn" onclick="setQ('report','check the kafka events for errors and warnings')">Events</button>
         <button class="example-btn" onclick="setQ('report','analyze the kafka topics configuration')">Topics</button>
         <button class="example-btn" onclick="setQ('report','show me the kafka cluster configuration')">Kafka config</button>
+        <button class="example-btn debezium" onclick="setQ('report','analyze kafka connect and debezium connectors status and configuration')">&#x1F7E3; Debezium</button>
       </div>
     </div>
   </div>
@@ -237,12 +238,10 @@
     <div class="response-body" id="responseBody"></div>
   </div>
 </main>
-
 <footer>
   Kafka Diagnostic Agent &middot; Red Hat AMQ Streams &middot;
   <a href="https://github.com/emunozd/kafka-diag-agent" target="_blank">GitHub</a>
 </footer>
-
 <script>
   var currentMode = 'live';
   var selectedFile = null;
@@ -312,9 +311,7 @@
     var question  = document.getElementById('questionLive').value.trim();
     var namespace = document.getElementById('namespaceLive').value.trim();
     if (!question) { document.getElementById('questionLive').focus(); return; }
-
     showLoading('Live cluster', namespace || 'default namespace', false);
-
     fetch('/api/diagnose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -335,14 +332,10 @@
     var question = document.getElementById('questionReport').value.trim();
     if (!question) { document.getElementById('questionReport').focus(); return; }
     if (!selectedFile) { alert('Please select a ZIP file first.'); return; }
-
     showLoading('Uploading and analyzing...', 'from report', true);
-
-    // Single request: send ZIP + question together
     var formData = new FormData();
     formData.append('zip', selectedFile, selectedFile.name);
     formData.append('question', question);
-
     fetch('/api/diagnose-report', {
       method: 'POST',
       body: formData
@@ -394,6 +387,5 @@
     }
   });
 </script>
-
 </body>
 </html>
