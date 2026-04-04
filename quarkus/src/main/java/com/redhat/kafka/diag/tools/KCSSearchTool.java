@@ -34,7 +34,7 @@ public class KCSSearchTool {
     private static final String TOKEN_URL =
             "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token";
     private static final String KCS_API_URL =
-        "https://api.access.redhat.com/support/search/kcs?q=%s&rows=5&language=en&documentKind=Solution";
+        "https://api.access.redhat.com/support/search/kcs?q=%s&rows=5&language=en&fq=documentKind:Solution";
 
     @Inject
     AgentConfig config;
@@ -146,36 +146,36 @@ public class KCSSearchTool {
         int pos = 0;
     
         while (pos < json.length()) {
+            // Find publishedTitle
             int titleIdx = json.indexOf("\"publishedTitle\":\"", pos);
             if (titleIdx == -1) break;
-    
             int titleStart = titleIdx + 18;
-            int titleEnd   = json.indexOf('"', titleStart);
+            int titleEnd = json.indexOf('"', titleStart);
             if (titleEnd == -1) break;
             String title = json.substring(titleStart, titleEnd);
     
-            // Find view_uri
+            // Find view_uri after the title
             int uriIdx = json.indexOf("\"view_uri\":\"", titleIdx);
             String articleUrl = "";
-            if (uriIdx != -1) {
+            if (uriIdx != -1 && uriIdx < titleIdx + 2000) {
                 int uriStart = uriIdx + 12;
                 int uriEnd = json.indexOf('"', uriStart);
                 if (uriEnd != -1) articleUrl = json.substring(uriStart, uriEnd);
             }
     
-            count++;
-            sb.append(count).append(". **").append(title).append("**\n");
-            if (!articleUrl.isBlank()) {
-                sb.append("   ").append(articleUrl).append("\n");
+            // Only include if it's a real access.redhat.com solution
+            if (!title.isBlank() && articleUrl.contains("access.redhat.com/solutions")) {
+                count++;
+                sb.append(count).append(". **").append(title).append("**\n");
+                sb.append("   ").append(articleUrl).append("\n\n");
             }
-            sb.append("\n");
     
             pos = titleEnd + 1;
             if (count >= 5) break;
         }
     
         if (count == 0) {
-            sb.append("No KCS articles found.\n\n");
+            sb.append("No KCS solutions found.\n\n");
             sb.append(buildFallbackResponse(query));
         } else {
             sb.append("=== End of KCS results ===");

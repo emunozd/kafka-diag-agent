@@ -64,11 +64,11 @@ public class DiagnosticResource {
 
         String namespace = resolveNamespace(request.namespace());
         String question = String.format("[namespace: %s] %s" +
-           " — MANDATORY: call KubernetesTool to get cluster state, pods and events." +
-           " Then MANDATORY: call queryDocumentation with the issue found." +
-           " Then MANDATORY: call searchKCS with the issue found." +
-           " Do not invent documentation links or KCS articles.",
-           namespace, request.question());
+        " — MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state." +
+        " Then MANDATORY: call queryDocumentation with the EXACT error found." +
+        " Then MANDATORY: call searchKCS with the same specific error." +
+        " Do not invent documentation links or KCS articles.",
+        namespace, request.question());
 
         LOG.infof("Diagnosing (live): namespace=%s question=%s", namespace, request.question());
 
@@ -179,10 +179,10 @@ public class DiagnosticResource {
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
             String q = "[report-mode: true] " + question +
-           " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
-           " Then MANDATORY: call queryDocumentation with the issue found." +
-           " Then MANDATORY: call searchKCS with the issue found." +
-           " Do not use KubernetesTool. Do not invent documentation links or KCS articles.";
+            " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
+            " Then MANDATORY: call queryDocumentation with the EXACT error or condition found." +
+            " Then MANDATORY: call searchKCS with the same specific error." +
+            " Do not use KubernetesTool. Do not invent documentation links or KCS articles.";
 
             String answer = stripThinkBlocks(agent.diagnose(q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();

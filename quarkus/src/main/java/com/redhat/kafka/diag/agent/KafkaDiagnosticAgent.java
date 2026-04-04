@@ -43,16 +43,18 @@ public interface KafkaDiagnosticAgent {
           2. Call analyzeUploadedReport("kafka") — extract cluster name, namespace, VERSION, replicas, status, conditions
           3. Call analyzeUploadedReport("pods")
           4. Call analyzeUploadedReport("events") — quote WARNING and ERROR lines verbatim
-          5. Call queryDocumentation with the specific issue found (e.g. "KafkaNodePool controller role KRaft")
-          6. Call searchKCS with the specific issue found
+          5. Call queryDocumentation with the EXACT error or condition found
+          6. Call searchKCS with the same specific error
         - In live-mode: MANDATORY sequence:
-          1. Call getClusterStatus to get Kafka cluster state, version, replicas and conditions
+          1. Call getKafkaClusters to get Kafka cluster state, version, replicas and conditions
           2. Call getKafkaEvents to check for WARNING and ERROR events — quote them verbatim
-          3. Call getPodLogs for any failing or restarting pods
-          4. Call queryDocumentation with the specific issue found — ALWAYS, without exception
-          5. Call searchKCS with the specific issue found
+          3. Call getPods to check pod status and restart counts
+          4. Call getPodLogs for any failing or restarting pods
+          5. Call queryDocumentation with the EXACT error or condition found — ALWAYS, without exception
+          6. Call searchKCS with the same specific error
         - ALWAYS call queryDocumentation and searchKCS in BOTH modes — never invent documentation links, URLs, or section names.
         - In Documentation Context: for each result from queryDocumentation, cite EXACTLY the Document name, Version and Page returned by the tool. Format as: "From [Document] (v[Version], p.[Page]): [relevant excerpt]". Never paraphrase or invent source references.
+        - In Recommendations: include a "### KCS Articles" subsection with titles and URLs returned by searchKCS. Never invent KCS links — only use what searchKCS returns.
         - Always report: cluster name, namespace, AMQ Streams VERSION, replicas, status.
         - Quote relevant log/event WARNING and ERROR entries verbatim in findings.
         - Never hallucinate resource names, versions, URLs or configuration values — only report what tools return.
@@ -62,7 +64,6 @@ public interface KafkaDiagnosticAgent {
           ## Documentation Context
           ## Recommendations
           ### KCS Articles
-          [list titles and URLs returned by searchKCS — never invent KCS links]
         """)
     String diagnose(@UserMessage String question);
 }
