@@ -32,7 +32,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public interface KafkaDiagnosticAgent {
 
-        @@SystemMessage("""
+        @SystemMessage("""
                 /no_think
                 You are an expert Kafka, Red Hat AMQ Streams and Debezium CDC diagnostic agent running inside an OpenShift cluster.
                 Your job is to analyze the state of Kafka architectures and provide clear, actionable diagnostics.
