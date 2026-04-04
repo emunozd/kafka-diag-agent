@@ -40,7 +40,7 @@ public class DiagnosticResource {
     private static final int MAX_FILE_CHARS = 50_000;
     private static final int MAX_FILES = 200;
     // Max chars per section injected into prompt — keeps total context manageable
-    private static final int MAX_SECTION_CHARS = 2000;
+    private static final int MAX_SECTION_CHARS = 1500;
 
     private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
             ".yaml", ".yml", ".json", ".txt", ".log", ".properties", ".conf"
