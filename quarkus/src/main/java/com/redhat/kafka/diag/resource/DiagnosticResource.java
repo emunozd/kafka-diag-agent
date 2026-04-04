@@ -231,10 +231,13 @@ public class DiagnosticResource {
                     "Do not use KubernetesTool." +
                     " Do not invent documentation links or KCS articles beyond what is provided above.";
 
+            LOG.infof("Starting Phase 2 diagnosis...");
             String answer;
             try {
                 answer = stripThinkBlocks(agent.diagnose(q));
+                LOG.infof("Phase 2 completed successfully");
             } catch (Exception e2) {
+                LOG.errorf(e2, "Phase 2 failed");
                 if (e2.getMessage() != null && e2.getMessage().contains("max_tokens")) {
                     LOG.warnf("Phase 2 context too large — retrying without RAG");
                     String shortQ = "[report-mode: true] " + question + "\n\n" +
