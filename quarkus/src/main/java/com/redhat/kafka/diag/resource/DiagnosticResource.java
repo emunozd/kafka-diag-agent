@@ -2,6 +2,8 @@ package com.redhat.kafka.diag.resource;
 
 import com.redhat.kafka.diag.agent.KafkaDiagnosticAgent;
 import com.redhat.kafka.diag.config.AgentConfig;
+import com.redhat.kafka.diag.tools.KCSSearchTool;
+import com.redhat.kafka.diag.tools.RAGQueryTool;
 import com.redhat.kafka.diag.tools.ReportUploadTool;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -10,7 +12,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
-import io.smallrye.common.annotation.Blocking;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -23,29 +24,28 @@ import java.util.zip.ZipInputStream;
  * REST endpoint for the Kafka Diagnostic Agent.
  *
  * POST /api/diagnose         — diagnose using live cluster access
- * POST /api/upload-report    — upload a Strimzi report.sh ZIP file
- * POST /api/diagnose-report  — diagnose using the uploaded ZIP report
+ * POST /api/diagnose-report  — diagnose using an uploaded Strimzi report.sh ZIP
  * GET  /api/health           — health check
+ *
+ * Both modes pre-fetch RAG documentation and KCS articles before invoking
+ * the agent, so the model receives enriched context regardless of whether
+ * it decides to call queryDocumentation and searchKCS itself.
  */
 @Path("/api")
 public class DiagnosticResource {
 
     private static final Logger LOG = Logger.getLogger(DiagnosticResource.class);
 
-    // Maximum uncompressed content per file — 50KB
     private static final int MAX_FILE_CHARS = 50_000;
-    // Maximum total files to extract from the ZIP
     private static final int MAX_FILES = 200;
-    // File extensions to extract as text
     private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
             ".yaml", ".yml", ".json", ".txt", ".log", ".properties", ".conf"
     );
 
-    @Inject
-    KafkaDiagnosticAgent agent;
-
-    @Inject
-    AgentConfig config;
+    @Inject KafkaDiagnosticAgent agent;
+    @Inject AgentConfig config;
+    @Inject RAGQueryTool ragQueryTool;
+    @Inject KCSSearchTool kcsSearchTool;
 
     // ----------------------------------------------------------------
     // POST /api/diagnose — live cluster mode
@@ -63,14 +63,20 @@ public class DiagnosticResource {
         }
 
         String namespace = resolveNamespace(request.namespace());
-        String question = String.format("[namespace: %s] %s" +
-        " — MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state." +
-        " Then MANDATORY: call queryDocumentation with the EXACT error found." +
-        " Then MANDATORY: call searchKCS with the same specific error." +
-        " Do not invent documentation links or KCS articles.",
-        namespace, request.question());
-
         LOG.infof("Diagnosing (live): namespace=%s question=%s", namespace, request.question());
+
+        // Pre-fetch RAG and KCS context based on the user question
+        String ragContext = prefetchRAG(request.question());
+        String kcsContext = prefetchKCS(request.question());
+
+        String question = String.format(
+                "[namespace: %s] %s" +
+                " — MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state." +
+                " Then use the following pre-fetched context to enrich your response:\n\n" +
+                "=== PRE-FETCHED DOCUMENTATION ===\n%s\n\n" +
+                "=== PRE-FETCHED KCS ARTICLES ===\n%s\n\n" +
+                "Do not invent documentation links or KCS articles beyond what is provided above.",
+                namespace, request.question(), ragContext, kcsContext);
 
         try {
             String answer = stripThinkBlocks(agent.diagnose(question));
@@ -84,70 +90,11 @@ public class DiagnosticResource {
     }
 
     // ----------------------------------------------------------------
-    // POST /api/upload-report — accept ZIP from multipart form
-    // ----------------------------------------------------------------
-
-    /**
-     * Accept a Strimzi report.sh ZIP file uploaded via multipart/form-data.
-     * Extracts all text/YAML files from the ZIP into a Map and stores them
-     * in the ReportUploadTool ThreadLocal for the subsequent diagnose-report call.
-     *
-     * Form field name: "report"
-     */
-    @POST
-    @Path("/upload-report")
-    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadReport(byte[] body) {
-        if (body == null || body.length == 0) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse("No file content received"))
-                    .build();
-        }
-
-        LOG.infof("Received report upload: %d bytes", body.length);
-
-        try {
-            Map<String, String> files = extractZipContents(
-                    new java.io.ByteArrayInputStream(body));
-
-            if (files.isEmpty()) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity(new ErrorResponse(
-                                "No readable files found in the ZIP. " +
-                                "Make sure it is a valid Strimzi report.sh output."))
-                        .build();
-            }
-
-            ReportUploadTool.setReportFiles(files);
-            LOG.infof("Report ZIP extracted — %d files ready for analysis", files.size());
-
-            return Response.ok(new UploadResponse(
-                    "Report uploaded successfully — " + files.size() + " files extracted",
-                    files.size(),
-                    "report.zip"
-            )).build();
-
-        } catch (Exception e) {
-            LOG.errorf(e, "Failed to process uploaded ZIP");
-            return Response.serverError()
-                    .entity(new ErrorResponse("Failed to process ZIP: " + e.getMessage()))
-                    .build();
-        }
-    }
-
-    // ----------------------------------------------------------------
     // POST /api/diagnose-report — report-based diagnosis
     // ----------------------------------------------------------------
 
-    /**
-     * Diagnose using a previously uploaded and extracted ZIP report.
-     * The agent will call ReportUploadTool to access the file contents.
-     * The report is cleared after the response is sent.
-     */
     @POST
     @Path("/diagnose-report")
-    @Blocking
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
     public Response diagnoseReport(
@@ -178,11 +125,21 @@ public class DiagnosticResource {
             ReportUploadTool.setReportFiles(files);
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
+            // Extract issue from kafka YAML to build a specific RAG/KCS query
+            String kafkaContent = extractByPrefix(files, "kafkas/");
+            String issueQuery   = extractIssue(kafkaContent, question);
+
+            // Pre-fetch RAG and KCS before calling the agent
+            String ragContext = prefetchRAG(issueQuery);
+            String kcsContext = prefetchKCS(issueQuery);
+
             String q = "[report-mode: true] " + question +
-            " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
-            " Then MANDATORY: call queryDocumentation with the EXACT error or condition found." +
-            " Then MANDATORY: call searchKCS with the same specific error." +
-            " Do not use KubernetesTool. Do not invent documentation links or KCS articles.";
+                    " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
+                    " Then use the following pre-fetched context to enrich your response:\n\n" +
+                    "=== PRE-FETCHED DOCUMENTATION ===\n" + ragContext + "\n\n" +
+                    "=== PRE-FETCHED KCS ARTICLES ===\n" + kcsContext + "\n\n" +
+                    "Do not use KubernetesTool." +
+                    " Do not invent documentation links or KCS articles beyond what is provided above.";
 
             String answer = stripThinkBlocks(agent.diagnose(q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();
@@ -209,13 +166,95 @@ public class DiagnosticResource {
     }
 
     // ----------------------------------------------------------------
-    // ZIP extraction
+    // Pre-fetch helpers
     // ----------------------------------------------------------------
 
     /**
-     * Extract all text files from a ZIP stream into a map of path → content.
-     * Skips binary files, directories, secrets content, and oversized files.
+     * Pre-fetch RAG documentation context for a given query.
+     * Called before invoking the agent so context is always available.
      */
+    private String prefetchRAG(String query) {
+        try {
+            String result = ragQueryTool.queryDocumentation(query);
+            LOG.infof("Pre-fetched RAG context for: %s", query);
+            return result;
+        } catch (Exception e) {
+            LOG.warnf("RAG pre-fetch failed: %s", e.getMessage());
+            return "[RAG context unavailable]";
+        }
+    }
+
+    /**
+     * Pre-fetch KCS articles for a given query.
+     * Called before invoking the agent so articles are always available.
+     */
+    private String prefetchKCS(String query) {
+        try {
+            String result = kcsSearchTool.searchKCS(query);
+            LOG.infof("Pre-fetched KCS context for: %s", query);
+            return result;
+        } catch (Exception e) {
+            LOG.warnf("KCS pre-fetch failed: %s", e.getMessage());
+            return "[KCS context unavailable]";
+        }
+    }
+
+    /**
+     * Extract the most relevant issue description from the kafka YAML content.
+     * Looks for condition messages and reason fields that describe the problem.
+     * Falls back to the original question if nothing specific is found.
+     */
+    private String extractIssue(String kafkaContent, String fallback) {
+        if (kafkaContent == null || kafkaContent.isBlank()) return fallback;
+
+        // Look for reason field in conditions
+        int reasonIdx = kafkaContent.indexOf("reason:");
+        if (reasonIdx >= 0) {
+            int start = reasonIdx + 7;
+            int end = kafkaContent.indexOf('\n', start);
+            if (end > start) {
+                String reason = kafkaContent.substring(start, end).trim();
+                if (!reason.isBlank()) {
+                    LOG.infof("Extracted issue from kafka YAML: %s", reason);
+                    return reason;
+                }
+            }
+        }
+
+        // Look for message field in conditions
+        int msgIdx = kafkaContent.indexOf("message:");
+        if (msgIdx >= 0) {
+            int start = msgIdx + 8;
+            int end = kafkaContent.indexOf('\n', start);
+            if (end > start) {
+                String msg = kafkaContent.substring(start, end).trim();
+                if (!msg.isBlank() && msg.length() > 10) {
+                    LOG.infof("Extracted issue message from kafka YAML: %s", msg);
+                    return msg;
+                }
+            }
+        }
+
+        return fallback;
+    }
+
+    /**
+     * Extract content for files matching a directory prefix.
+     */
+    private String extractByPrefix(Map<String, String> files, String prefix) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) {
+                sb.append(entry.getValue()).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    // ----------------------------------------------------------------
+    // ZIP extraction
+    // ----------------------------------------------------------------
+
     private Map<String, String> extractZipContents(InputStream is) throws Exception {
         Map<String, String> files = new LinkedHashMap<>();
 
@@ -226,29 +265,12 @@ public class DiagnosticResource {
             while ((entry = zis.getNextEntry()) != null && fileCount < MAX_FILES) {
                 String name = entry.getName();
 
-                // Skip directories
-                if (entry.isDirectory()) {
-                    zis.closeEntry();
-                    continue;
-                }
+                if (entry.isDirectory()) { zis.closeEntry(); continue; }
+                if (!isTextFile(name))   { zis.closeEntry(); continue; }
 
-                // Skip secrets content (keep metadata but not values)
-                if (name.contains("/secrets/") && !name.endsWith(".yaml")) {
-                    zis.closeEntry();
-                    continue;
-                }
-
-                // Only extract text files
-                if (!isTextFile(name)) {
-                    zis.closeEntry();
-                    continue;
-                }
-
-                // Read content with size limit
                 byte[] buffer = new byte[8192];
                 StringBuilder sb = new StringBuilder();
-                int read;
-                int totalRead = 0;
+                int read, totalRead = 0;
 
                 while ((read = zis.read(buffer)) != -1) {
                     totalRead += read;
@@ -258,14 +280,9 @@ public class DiagnosticResource {
                 }
 
                 if (totalRead > MAX_FILE_CHARS) {
-                    sb.append("\n[File truncated at ")
-                      .append(MAX_FILE_CHARS)
-                      .append(" characters — original size: ")
-                      .append(totalRead)
-                      .append(" bytes]");
+                    sb.append("\n[File truncated at ").append(MAX_FILE_CHARS).append(" chars]");
                 }
 
-                // Normalize path separators and remove top-level date folder
                 String normalizedPath = normalizePath(name);
                 if (!sb.toString().isBlank()) {
                     files.put(normalizedPath, sb.toString());
@@ -279,16 +296,8 @@ public class DiagnosticResource {
         return files;
     }
 
-    /**
-     * Normalize the ZIP entry path:
-     * - Replace backslashes with forward slashes
-     * - Remove the top-level date folder (report-DD-MM-YYYY_HH-MM-SS/)
-     * - Remove the "reports/" prefix
-     * Result: "kafkas/my-cluster.yaml", "pods/broker-0.log", etc.
-     */
     private String normalizePath(String path) {
         path = path.replace('\\', '/');
-        // Remove top-level date folder: report-08-01-2026_18-47-12/reports/
         int reportsIdx = path.indexOf("/reports/");
         if (reportsIdx >= 0) {
             path = path.substring(reportsIdx + "/reports/".length());
@@ -324,10 +333,7 @@ public class DiagnosticResource {
     // ----------------------------------------------------------------
 
     public record DiagnoseRequest(String question, String namespace) {}
-
     public record DiagnoseResponse(String answer, String namespace, boolean fromReport) {}
-
     public record UploadResponse(String message, int filesExtracted, String filename) {}
-
     public record ErrorResponse(String error) {}
 }
