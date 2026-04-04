@@ -57,12 +57,13 @@ public interface KafkaDiagnosticAgent {
         - NEVER duplicate content between sections — cite documentation ONLY in Documentation Context, not in Findings.
         - Documentation Context must contain ONLY citations from PRE-FETCHED DOCUMENTATION with exact Document name, Version and Page.
         - Recommendations KCS Articles must contain ONLY links from PRE-FETCHED KCS ARTICLES. Never invent KCS links.
+        - USE PLAIN TEXT ONLY — no markdown, no ## headers, no ** bold, no bullet symbols beyond simple dashes.
         - Structure your response EXACTLY as follows, each section appearing ONLY ONCE:
-          ## Summary
-          ## Findings
-          ## Documentation Context
-          ## Recommendations
-          ### KCS Articles
+          SUMMARY:
+          FINDINGS:
+          DOCUMENTATION CONTEXT:
+          RECOMMENDATIONS:
+          KCS ARTICLES:
         """)
     String diagnose(@UserMessage String question);
 }
