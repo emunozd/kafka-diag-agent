@@ -212,6 +212,7 @@ public class DiagnosticResource {
                     "=== REPORT CONTENT ===\n" + phase1Content;
 
             String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            LOG.infof("Phase 1 raw response: %s", phase1Raw.substring(0, Math.min(500, phase1Raw.length())));
             String detectedIssue = parseIssueFromJson(phase1Raw, question);
             LOG.infof("Phase 1 detected issue: %s", detectedIssue);
 
