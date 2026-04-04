@@ -324,9 +324,16 @@ public class DiagnosticResource {
 
     private String normalizePath(String path) {
         path = path.replace('\\', '/');
+        // Case 1: report-DD-MM-YYYY/reports/kafkas/...
         int reportsIdx = path.indexOf("/reports/");
         if (reportsIdx >= 0) {
             path = path.substring(reportsIdx + "/reports/".length());
+            return path;
+        }
+        // Case 2: reports/kafkas/... (no date folder)
+        if (path.startsWith("reports/")) {
+            path = path.substring("reports/".length());
+            return path;
         }
         return path;
     }
