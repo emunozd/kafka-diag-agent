@@ -63,7 +63,12 @@ public class DiagnosticResource {
         }
 
         String namespace = resolveNamespace(request.namespace());
-        String question  = String.format("[namespace: %s] %s", namespace, request.question());
+        String question = String.format("[namespace: %s] %s" +
+           " — MANDATORY: call KubernetesTool to get cluster state, pods and events." +
+           " Then MANDATORY: call queryDocumentation with the issue found." +
+           " Then MANDATORY: call searchKCS with the issue found." +
+           " Do not invent documentation links or KCS articles.",
+           namespace, request.question());
 
         LOG.infof("Diagnosing (live): namespace=%s question=%s", namespace, request.question());
 
@@ -174,8 +179,10 @@ public class DiagnosticResource {
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
             String q = "[report-mode: true] " + question +
-                    " — use the analyzeUploadedReport tool to read the cluster data " +
-                    "from the uploaded ZIP report. Do not use KubernetesTool.";
+           " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
+           " Then MANDATORY: call queryDocumentation with the issue found." +
+           " Then MANDATORY: call searchKCS with the issue found." +
+           " Do not use KubernetesTool. Do not invent documentation links or KCS articles.";
 
             String answer = stripThinkBlocks(agent.diagnose(q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();
