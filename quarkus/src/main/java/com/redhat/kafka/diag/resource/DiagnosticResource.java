@@ -29,27 +29,23 @@ import java.util.zip.ZipInputStream;
  *
  * Both modes use a TWO-PHASE approach:
  *
- * Phase 1 — Issue identification:
- *   The agent analyzes the cluster data or report content and returns a JSON
- *   object identifying the specific technical issue found.
+ * Phase 1 — agent identifies the specific issue and returns JSON:
+ *   {"issue": "specific error found", "component": "kafka|connect|debezium|..."}
  *
- * Phase 2 — Enriched diagnosis:
- *   The identified issue is used to search RAG documentation and KCS articles.
- *   The agent then produces the final structured diagnosis enriched with
- *   relevant documentation and known solutions.
+ * Phase 2 — Java uses the detected issue to search RAG + KCS, then agent
+ *   produces the full structured diagnosis enriched with relevant docs and solutions.
  *
- * This ensures KCS and RAG searches are based on the actual issue found,
- * not on the user's generic question.
+ * Since KafkaDiagnosticAgent uses NoChatMemoryProviderSupplier, each call is
+ * completely independent — Phase 1 JSON does not contaminate Phase 2 response.
  */
 @Path("/api")
 public class DiagnosticResource {
 
     private static final Logger LOG = Logger.getLogger(DiagnosticResource.class);
 
-    private static final int MAX_FILE_CHARS = 50_000;
-    private static final int MAX_FILES = 200;
+    private static final int MAX_FILE_CHARS    = 50_000;
+    private static final int MAX_FILES         = 200;
     private static final int MAX_SECTION_CHARS = 1500;
-    private static final int MAX_SECTION_CHARS_P1 = 1500;
 
     private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
             ".yaml", ".yml", ".json", ".txt", ".log", ".properties", ".conf"
@@ -84,48 +80,30 @@ public class DiagnosticResource {
                     "[namespace: %s] %s\n\n" +
                     "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to inspect the cluster.\n" +
                     "Then return ONLY a JSON object — no other text — with this exact format:\n" +
-                    "{\"issue\": \"<specific technical issue found, e.g. KafkaNodePool missing controller role, " +
-                    "consumer lag on topic X, MirrorMaker2 connector FAILED, pod CrashLoopBackOff>\", " +
+                    "{\"issue\": \"<specific technical issue found>\", " +
                     "\"component\": \"<kafka|connect|debezium|topic|nodepool|pod|mirrormaker>\"}\n" +
-                    "If no issue found, return: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}",
+                    "If no issue found: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}",
                     namespace, request.question());
 
             String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
+            LOG.infof("Phase 1 raw: %s", phase1Raw.substring(0, Math.min(300, phase1Raw.length())));
             String detectedIssue = parseIssueFromJson(phase1Raw, request.question());
             LOG.infof("Phase 1 detected issue: %s", detectedIssue);
 
-            // Phase 2: search RAG and KCS with the detected issue
+            // Phase 2: search RAG and KCS with the actual issue found
             String ragContext = prefetchRAG(detectedIssue);
             String kcsContext = prefetchKCS(detectedIssue);
 
-            // Phase 2: full diagnosis with enriched context
+            // Phase 2: full diagnosis — agent calls tools again independently (no memory)
             String phase2Prompt = String.format(
                     "[namespace: %s] %s\n\n" +
                     "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods to get cluster state.\n\n" +
-                    "The following documentation and KCS articles are relevant to the issue found:\n\n" +
                     "=== PRE-FETCHED DOCUMENTATION ===\n%s\n\n" +
                     "=== PRE-FETCHED KCS ARTICLES ===\n%s\n\n" +
                     "Do not invent documentation links or KCS articles beyond what is provided above.",
                     namespace, request.question(), ragContext, kcsContext);
 
-            String answer;
-            try {
-                answer = stripThinkBlocks(agent.diagnose(phase2Prompt));
-            } catch (Exception e2) {
-                if (e2.getMessage() != null && e2.getMessage().contains("max_tokens")) {
-                    LOG.warnf("Phase 2 context too large — retrying with shorter prompt");
-                    String shortPrompt = String.format(
-                            "[namespace: %s] %s\n\n" +
-                            "MANDATORY: call getKafkaClusters, getKafkaEvents and getPods.\n\n" +
-                            "=== PRE-FETCHED KCS ARTICLES ===\n%s\n\n" +
-                            "Do not invent KCS articles beyond what is provided above.",
-                            namespace, request.question(), kcsContext);
-                    answer = stripThinkBlocks(agent.diagnose(shortPrompt));
-                } else {
-                    throw e2;
-                }
-            }
-
+            String answer = stripThinkBlocks(agent.diagnose(phase2Prompt));
             return Response.ok(new DiagnoseResponse(answer, namespace, false)).build();
 
         } catch (Exception e) {
@@ -183,74 +161,47 @@ public class DiagnosticResource {
             String topicsSection    = truncate(extractByPrefix(files, "kafkatopics/"), MAX_SECTION_CHARS);
             String logsSection      = truncate(extractByPrefix(files, "logs/"), MAX_SECTION_CHARS);
 
-            // Step 3: build full report content for Phase 2
+            // Step 3: build report content string
             StringBuilder reportContent = new StringBuilder();
-            appendSection(reportContent, "KAFKA CLUSTER", kafkaSection);
+            appendSection(reportContent, "KAFKA CLUSTER",    kafkaSection);
             appendSection(reportContent, "KAFKA NODE POOLS", nodepoolSection);
-            appendSection(reportContent, "PODS", podsSection);
-            appendSection(reportContent, "EVENTS", eventsSection);
-            appendSection(reportContent, "KAFKA CONNECT", connectSection);
+            appendSection(reportContent, "PODS",             podsSection);
+            appendSection(reportContent, "EVENTS",           eventsSection);
+            appendSection(reportContent, "KAFKA CONNECT",    connectSection);
             appendSection(reportContent, "KAFKA CONNECTORS", connectorSection);
-            appendSection(reportContent, "KAFKA TOPICS", topicsSection);
-            appendSection(reportContent, "LOGS", logsSection);
+            appendSection(reportContent, "KAFKA TOPICS",     topicsSection);
+            appendSection(reportContent, "LOGS",             logsSection);
             String reportStr = reportContent.toString();
 
-            // Phase 1: use REDUCED content — only key sections to identify the issue
-            StringBuilder phase1Content = new StringBuilder();
-            appendSection(phase1Content, "KAFKA CLUSTER", truncate(kafkaSection, MAX_SECTION_CHARS_P1));
-            appendSection(phase1Content, "EVENTS", truncate(eventsSection, MAX_SECTION_CHARS_P1));
-            appendSection(phase1Content, "KAFKA CONNECTORS", truncate(connectorSection, MAX_SECTION_CHARS_P1));
-            appendSection(phase1Content, "KAFKA CONNECT", truncate(connectSection, MAX_SECTION_CHARS_P1));
-            appendSection(phase1Content, "PODS", truncate(podsSection, MAX_SECTION_CHARS_P1));
-
-            String phase1Prompt = "Analyze the following Kafka cluster report content.\n" +
+            // Phase 1: agent reads the report and identifies the specific issue
+            String phase1Prompt = "Analyze the following Kafka cluster report and identify the main issue.\n" +
                     "Return ONLY a JSON object — no other text — with this exact format:\n" +
-                    "{\"issue\": \"<specific technical issue found, e.g. KafkaNodePool missing controller role, " +
-                    "Debezium Oracle connector FAILED, pod CrashLoopBackOff, consumer lag>\", " +
+                    "{\"issue\": \"<specific technical issue found>\", " +
                     "\"component\": \"<kafka|connect|debezium|topic|nodepool|pod|mirrormaker>\"}\n" +
-                    "If no issue found, return: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}\n\n" +
-                    "=== REPORT CONTENT ===\n" + phase1Content;
+                    "If no issue found: {\"issue\": \"cluster healthy\", \"component\": \"kafka\"}\n\n" +
+                    "=== REPORT CONTENT ===\n" + reportStr;
 
             String phase1Raw = stripThinkBlocks(agent.diagnose(phase1Prompt));
-            LOG.infof("Phase 1 raw response: %s", phase1Raw.substring(0, Math.min(500, phase1Raw.length())));
+            LOG.infof("Phase 1 raw: %s", phase1Raw.substring(0, Math.min(300, phase1Raw.length())));
             String detectedIssue = parseIssueFromJson(phase1Raw, question);
             LOG.infof("Phase 1 detected issue: %s", detectedIssue);
 
-            // Phase 2: search RAG and KCS with the detected issue
+            // Phase 2: search RAG and KCS with the actual issue found
             String ragContext = prefetchRAG(detectedIssue);
             String kcsContext = prefetchKCS(detectedIssue);
 
             // Phase 2: full diagnosis with enriched context
             String q = "[report-mode: true] " + question + "\n\n" +
-                    "The following content was extracted directly from the uploaded ZIP report.\n" +
-                    "Use it to answer the question. Do NOT say files are missing — if a section\n" +
-                    "shows '(not present in report)' that resource does not exist in the report.\n\n" +
+                    "The following content was extracted from the uploaded ZIP report.\n" +
+                    "Do NOT say files are missing — if a section shows '(not present in report)'\n" +
+                    "that resource genuinely does not exist in the report.\n\n" +
                     "=== REPORT CONTENT ===\n" + reportStr + "\n\n" +
                     "=== PRE-FETCHED DOCUMENTATION ===\n" + ragContext + "\n\n" +
                     "=== PRE-FETCHED KCS ARTICLES ===\n" + kcsContext + "\n\n" +
                     "Do not use KubernetesTool." +
                     " Do not invent documentation links or KCS articles beyond what is provided above.";
 
-            LOG.infof("Starting Phase 2 diagnosis...");
-            String answer;
-            try {
-                answer = stripThinkBlocks(agent.diagnose(q));
-                LOG.infof("Phase 2 completed successfully");
-            } catch (Exception e2) {
-                LOG.errorf(e2, "Phase 2 failed");
-                if (e2.getMessage() != null && e2.getMessage().contains("max_tokens")) {
-                    LOG.warnf("Phase 2 context too large — retrying without RAG");
-                    String shortQ = "[report-mode: true] " + question + "\n\n" +
-                            "=== REPORT CONTENT ===\n" + reportStr + "\n\n" +
-                            "=== PRE-FETCHED KCS ARTICLES ===\n" + kcsContext + "\n\n" +
-                            "Do not use KubernetesTool." +
-                            " Do not invent KCS articles beyond what is provided above.";
-                    answer = stripThinkBlocks(agent.diagnose(shortQ));
-                } else {
-                    throw e2;
-                }
-            }
-
+            String answer = stripThinkBlocks(agent.diagnose(q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();
 
         } catch (Exception e) {
@@ -275,7 +226,7 @@ public class DiagnosticResource {
     }
 
     // ----------------------------------------------------------------
-    // Phase 1 — JSON issue parsing
+    // Phase 1 — JSON parsing
     // ----------------------------------------------------------------
 
     private String parseIssueFromJson(String raw, String fallback) {
@@ -301,7 +252,7 @@ public class DiagnosticResource {
         String issue = cleaned.substring(startQuote + 1, endQuote).trim();
 
         if (issue.isBlank() || issue.equalsIgnoreCase("cluster healthy")) {
-            LOG.infof("No specific issue detected — using user question as fallback");
+            LOG.infof("No specific issue detected — using fallback: %s", fallback);
             return fallback;
         }
 
