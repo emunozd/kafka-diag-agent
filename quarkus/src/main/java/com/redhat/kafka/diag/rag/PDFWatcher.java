@@ -88,7 +88,7 @@ public class PDFWatcher {
         // Delay first scan by 2x the interval to let the startup indexing finish first
         scheduler.scheduleAtFixedRate(
                 this::scan,
-                intervalSeconds * 2,
+                intervalSeconds * 10,
                 intervalSeconds,
                 TimeUnit.SECONDS
         );
