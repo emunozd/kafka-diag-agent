@@ -106,14 +106,6 @@
     </dependency>
 
     <!-- ============================================================ -->
-    <!-- Multipart — for ZIP report upload                           -->
-    <!-- ============================================================ -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-rest-multipart</artifactId>
-    </dependency>
-
-    <!-- ============================================================ -->
     <!-- Config, health, web UI                                       -->
     <!-- ============================================================ -->
     <dependency>
