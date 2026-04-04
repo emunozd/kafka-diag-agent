@@ -27,9 +27,10 @@ import java.util.zip.ZipInputStream;
  * POST /api/diagnose-report  — diagnose using an uploaded Strimzi report.sh ZIP
  * GET  /api/health           — health check
  *
- * Both modes pre-fetch RAG documentation and KCS articles before invoking
- * the agent, so the model receives enriched context regardless of whether
- * it decides to call queryDocumentation and searchKCS itself.
+ * In report mode, ALL relevant content is pre-extracted from the ZIP and
+ * injected directly into the prompt. The agent does not need to call
+ * analyzeUploadedReport tools — it receives the full context upfront.
+ * This avoids the model hallucinating "no files found" for existing resources.
  */
 @Path("/api")
 public class DiagnosticResource {
@@ -38,6 +39,9 @@ public class DiagnosticResource {
 
     private static final int MAX_FILE_CHARS = 50_000;
     private static final int MAX_FILES = 200;
+    // Max chars per section injected into prompt — keeps total context manageable
+    private static final int MAX_SECTION_CHARS = 2000;
+
     private static final java.util.Set<String> TEXT_EXTENSIONS = java.util.Set.of(
             ".yaml", ".yml", ".json", ".txt", ".log", ".properties", ".conf"
     );
@@ -65,7 +69,6 @@ public class DiagnosticResource {
         String namespace = resolveNamespace(request.namespace());
         LOG.infof("Diagnosing (live): namespace=%s question=%s", namespace, request.question());
 
-        // Pre-fetch RAG and KCS context based on the user question
         String ragContext = prefetchRAG(request.question());
         String kcsContext = prefetchKCS(request.question());
 
@@ -126,19 +129,42 @@ public class DiagnosticResource {
             ReportUploadTool.setReportFiles(files);
             LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
 
-            // Step 2: extract specific issue from kafka YAML for targeted RAG/KCS query
-            String kafkaContent = extractByPrefix(files, "kafkas/");
-            String issueQuery   = extractIssue(kafkaContent, question);
+            // Step 2: pre-extract all relevant sections from the ZIP
+            String kafkaSection      = truncate(extractByPrefix(files, "kafkas/"), MAX_SECTION_CHARS);
+            String podsSection       = truncate(extractByPrefix(files, "pods/"), MAX_SECTION_CHARS);
+            String eventsSection     = truncate(extractByPrefix(files, "events/"), MAX_SECTION_CHARS);
+            String connectSection    = truncate(extractByPrefix(files, "kafkaconnects/"), MAX_SECTION_CHARS);
+            String connectorSection  = truncate(extractByPrefix(files, "kafkaconnectors/"), MAX_SECTION_CHARS);
+            String nodepoolSection   = truncate(extractByPrefix(files, "kafkanodepools/"), MAX_SECTION_CHARS);
+            String topicsSection     = truncate(extractByPrefix(files, "kafkatopics/"), MAX_SECTION_CHARS);
+            String logsSection       = truncate(extractByPrefix(files, "logs/"), MAX_SECTION_CHARS);
+
+            // Step 3: extract issue from kafka or connector YAML for targeted RAG/KCS query
+            String issueQuery = extractIssue(kafkaSection,
+                                extractIssue(connectorSection,
+                                extractIssue(connectSection, question)));
             LOG.infof("Using issue query for RAG/KCS: %s", issueQuery);
 
-            // Step 3: pre-fetch RAG and KCS with the specific issue
+            // Step 4: pre-fetch RAG and KCS
             String ragContext = prefetchRAG(issueQuery);
             String kcsContext = prefetchKCS(issueQuery);
 
-            // Step 4: invoke agent with enriched context
-            String q = "[report-mode: true] " + question +
-                    " — MANDATORY: call analyzeUploadedReport for summary, kafka, pods and events." +
-                    " Then use the following pre-fetched context to enrich your response:\n\n" +
+            // Step 5: build enriched prompt with all pre-extracted content
+            StringBuilder reportContent = new StringBuilder();
+            appendSection(reportContent, "KAFKA CLUSTER", kafkaSection);
+            appendSection(reportContent, "KAFKA NODE POOLS", nodepoolSection);
+            appendSection(reportContent, "PODS", podsSection);
+            appendSection(reportContent, "EVENTS", eventsSection);
+            appendSection(reportContent, "KAFKA CONNECT", connectSection);
+            appendSection(reportContent, "KAFKA CONNECTORS", connectorSection);
+            appendSection(reportContent, "KAFKA TOPICS", topicsSection);
+            appendSection(reportContent, "LOGS", logsSection);
+
+            String q = "[report-mode: true] " + question + "\n\n" +
+                    "The following content was extracted directly from the uploaded ZIP report.\n" +
+                    "Use it to answer the question. Do NOT say files are missing — if a section\n" +
+                    "is empty below, that resource does not exist in the report.\n\n" +
+                    "=== REPORT CONTENT ===\n" + reportContent + "\n\n" +
                     "=== PRE-FETCHED DOCUMENTATION ===\n" + ragContext + "\n\n" +
                     "=== PRE-FETCHED KCS ARTICLES ===\n" + kcsContext + "\n\n" +
                     "Do not use KubernetesTool." +
@@ -194,41 +220,44 @@ public class DiagnosticResource {
         }
     }
 
-    /**
-     * Extract the most relevant issue from the kafka YAML conditions.
-     *
-     * The Strimzi YAML conditions block looks like:
-     *   conditions:
-     *     message: 'The Kafka cluster ... is invalid: [At least one KafkaNodePool
-     *       with the controller role...]'
-     *     reason: InvalidResourceException
-     *     type: NotReady
-     *
-     * The message may span multiple lines (YAML block scalar or flow scalar).
-     * We join continuation lines until we hit the next key or end of content.
-     */
-    private String extractIssue(String kafkaContent, String fallback) {
-        if (kafkaContent == null || kafkaContent.isBlank()) return fallback;
+    private void appendSection(StringBuilder sb, String title, String content) {
+        sb.append("--- ").append(title).append(" ---\n");
+        if (content == null || content.isBlank()) {
+            sb.append("(not present in report)\n");
+        } else {
+            sb.append(content);
+        }
+        sb.append("\n");
+    }
 
-        String[] lines = kafkaContent.split("\n");
+    // ----------------------------------------------------------------
+    // Issue extraction
+    // ----------------------------------------------------------------
+
+    /**
+     * Extract the most relevant issue from YAML content.
+     * Looks for conditions.message, conditions.reason, or NotReady type.
+     * Falls back to the provided fallback string if nothing specific is found.
+     */
+    private String extractIssue(String content, String fallback) {
+        if (content == null || content.isBlank()) return fallback;
+
+        String[] lines = content.split("\n");
 
         // Pass 1 — look for message: field and collect multiline value
         for (int i = 0; i < lines.length; i++) {
             String trimmed = lines[i].trim();
             if (trimmed.startsWith("message:")) {
                 StringBuilder msg = new StringBuilder();
-                // Value on the same line
                 String sameLine = trimmed.substring(8).trim()
                         .replace("'", "").replace("\"", "").trim();
                 msg.append(sameLine);
 
-                // Collect continuation lines (indented more than current)
                 int currentIndent = lines[i].indexOf("message:");
                 for (int j = i + 1; j < lines.length && j < i + 5; j++) {
                     String next = lines[j];
                     if (next.isBlank()) break;
                     int nextIndent = next.length() - next.stripLeading().length();
-                    // Continuation line is more indented than the key
                     if (nextIndent > currentIndent) {
                         msg.append(" ").append(next.trim()
                                 .replace("'", "").replace("\"", ""));
@@ -238,11 +267,9 @@ public class DiagnosticResource {
                 }
 
                 String result = msg.toString().trim();
-                // Only use if meaningful (not just a cluster name)
                 if (result.length() > 20 && result.contains(" ")) {
-                    // Truncate to 200 chars for embedding
                     if (result.length() > 200) result = result.substring(0, 200);
-                    LOG.infof("Extracted issue from kafka YAML message: %s", result);
+                    LOG.infof("Extracted issue message: %s", result);
                     return result;
                 }
             }
@@ -253,28 +280,34 @@ public class DiagnosticResource {
             String trimmed = line.trim();
             if (trimmed.startsWith("reason:")) {
                 String reason = trimmed.substring(7).trim();
-                if (!reason.isBlank() && !reason.equals("null")) {
-                    LOG.infof("Extracted issue from kafka YAML reason: %s", reason);
+                if (!reason.isBlank() && !reason.equals("null") && !reason.equals("None")) {
+                    LOG.infof("Extracted issue reason: %s", reason);
                     return reason;
                 }
             }
         }
 
-        LOG.infof("No issue extracted from kafka YAML — using fallback: %s", fallback);
         return fallback;
     }
 
-    /**
-     * Extract and concatenate content for all files matching a directory prefix.
-     */
+    // ----------------------------------------------------------------
+    // Content helpers
+    // ----------------------------------------------------------------
+
     private String extractByPrefix(Map<String, String> files, String prefix) {
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> entry : files.entrySet()) {
             if (entry.getKey().startsWith(prefix)) {
-                sb.append(entry.getValue()).append("\n");
+                sb.append("# ").append(entry.getKey()).append("\n");
+                sb.append(entry.getValue()).append("\n\n");
             }
         }
         return sb.toString();
+    }
+
+    private String truncate(String content, int maxChars) {
+        if (content == null || content.length() <= maxChars) return content;
+        return content.substring(0, maxChars) + "\n[... truncated]";
     }
 
     // ----------------------------------------------------------------
@@ -324,16 +357,12 @@ public class DiagnosticResource {
 
     private String normalizePath(String path) {
         path = path.replace('\\', '/');
-        // Case 1: report-DD-MM-YYYY/reports/kafkas/...
         int reportsIdx = path.indexOf("/reports/");
         if (reportsIdx >= 0) {
-            path = path.substring(reportsIdx + "/reports/".length());
-            return path;
+            return path.substring(reportsIdx + "/reports/".length());
         }
-        // Case 2: reports/kafkas/... (no date folder)
         if (path.startsWith("reports/")) {
-            path = path.substring("reports/".length());
-            return path;
+            return path.substring("reports/".length());
         }
         return path;
     }
