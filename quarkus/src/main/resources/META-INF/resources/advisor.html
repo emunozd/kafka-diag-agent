@@ -336,29 +336,16 @@
     if (!question) { document.getElementById('questionReport').focus(); return; }
     if (!selectedFile) { alert('Please select a ZIP file first.'); return; }
 
-    showLoading('Uploading ZIP...', 'from report', true);
+    showLoading('Uploading and analyzing...', 'from report', true);
 
-    // Step 1: upload the ZIP as multipart/form-data
+    // Single request: send ZIP + question together
     var formData = new FormData();
-    formData.append('report', selectedFile, selectedFile.name);
+    formData.append('zip', selectedFile, selectedFile.name);
+    formData.append('question', question);
 
-    fetch('/api/upload-report', {
+    fetch('/api/diagnose-report', {
       method: 'POST',
       body: formData
-    })
-    .then(function(r) {
-      if (!r.ok) { return r.json().then(function(e) { throw new Error(e.error || 'Upload failed'); }); }
-      return r.json();
-    })
-    .then(function(uploadResult) {
-      showLoading('Analyzing report (' + uploadResult.filesExtracted + ' files)...', 'from report', true);
-
-      // Step 2: diagnose using the uploaded report
-      return fetch('/api/diagnose-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: question, namespace: null })
-      });
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {

@@ -8,6 +8,8 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -139,32 +141,43 @@ public class DiagnosticResource {
      */
     @POST
     @Path("/diagnose-report")
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response diagnoseReport(DiagnoseRequest request) {
-        if (request == null || request.question() == null || request.question().isBlank()) {
+    public Response diagnoseReport(
+            @RestForm("zip") FileUpload zipFile,
+            @RestForm("question") String question) {
+
+        if (question == null || question.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(new ErrorResponse("question is required"))
                     .build();
         }
-
-        if (!ReportUploadTool.hasReportFiles()) {
+        if (zipFile == null) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse(
-                            "No report uploaded. Please upload a Strimzi report.sh ZIP first " +
-                            "via POST /api/upload-report"))
+                    .entity(new ErrorResponse("zip file is required"))
                     .build();
         }
 
-        String question = "[report-mode: true] " + request.question() +
-                          " — use the analyzeUploadedReport tool to read the cluster data " +
-                          "from the uploaded ZIP report. Do not use KubernetesTool.";
-
-        LOG.infof("Diagnosing (report): question=%s", request.question());
-
         try {
-            String answer = stripThinkBlocks(agent.diagnose(question));
+            Map<String, String> files = extractZipContents(
+                    java.nio.file.Files.newInputStream(zipFile.uploadedFile()));
+
+            if (files.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(new ErrorResponse("No readable files found in the ZIP"))
+                        .build();
+            }
+
+            ReportUploadTool.setReportFiles(files);
+            LOG.infof("Diagnosing from ZIP: %d files, question=%s", files.size(), question);
+
+            String q = "[report-mode: true] " + question +
+                    " — use the analyzeUploadedReport tool to read the cluster data " +
+                    "from the uploaded ZIP report. Do not use KubernetesTool.";
+
+            String answer = stripThinkBlocks(agent.diagnose(q));
             return Response.ok(new DiagnoseResponse(answer, "from-report", true)).build();
+
         } catch (Exception e) {
             LOG.errorf(e, "Error during report diagnosis");
             return Response.serverError()
