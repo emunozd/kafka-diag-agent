@@ -30,7 +30,7 @@ public class ReportUploadTool {
 
     private static final Logger LOG = Logger.getLogger(ReportUploadTool.class);
 
-    private static final int MAX_CONTENT_CHARS = 3000;
+    private static final int MAX_CONTENT_CHARS = 2000;
 
     // Thread-local: map of relative path → file content extracted from the ZIP
     private static final ThreadLocal<Map<String, String>> reportFiles = new ThreadLocal<>();
