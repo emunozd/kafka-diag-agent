@@ -206,35 +206,31 @@ public class DiagnosticResource {
      */
     private String extractIssue(String kafkaContent, String fallback) {
         if (kafkaContent == null || kafkaContent.isBlank()) return fallback;
-
-        // Look for reason field in conditions
-        int reasonIdx = kafkaContent.indexOf("reason:");
-        if (reasonIdx >= 0) {
-            int start = reasonIdx + 7;
-            int end = kafkaContent.indexOf('\n', start);
-            if (end > start) {
-                String reason = kafkaContent.substring(start, end).trim();
-                if (!reason.isBlank()) {
-                    LOG.infof("Extracted issue from kafka YAML: %s", reason);
-                    return reason;
-                }
-            }
-        }
-
-        // Look for message field in conditions
-        int msgIdx = kafkaContent.indexOf("message:");
-        if (msgIdx >= 0) {
-            int start = msgIdx + 8;
-            int end = kafkaContent.indexOf('\n', start);
-            if (end > start) {
-                String msg = kafkaContent.substring(start, end).trim();
-                if (!msg.isBlank() && msg.length() > 10) {
-                    LOG.infof("Extracted issue message from kafka YAML: %s", msg);
+    
+        // Prioritize message field — it has the specific error text
+        for (String line : kafkaContent.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("message:")) {
+                String msg = trimmed.substring(8).trim().replace("'", "");
+                if (!msg.isBlank() && msg.length() > 15) {
+                    LOG.infof("Extracted issue from kafka YAML message: %s", msg);
                     return msg;
                 }
             }
         }
-
+    
+        // Fallback to reason
+        for (String line : kafkaContent.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("reason:")) {
+                String reason = trimmed.substring(7).trim();
+                if (!reason.isBlank()) {
+                    LOG.infof("Extracted issue from kafka YAML reason: %s", reason);
+                    return reason;
+                }
+            }
+        }
+    
         return fallback;
     }
 
