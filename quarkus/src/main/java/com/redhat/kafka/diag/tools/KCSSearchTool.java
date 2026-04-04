@@ -34,7 +34,7 @@ public class KCSSearchTool {
     private static final String TOKEN_URL =
             "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token";
     private static final String KCS_API_URL =
-            "https://api.access.redhat.com/rs/cases/solutions?keyword=%s&rows=5";
+        "https://api.access.redhat.com/support/search/kcs?q=%s&rows=5&language=en&documentKind=Solution";
 
     @Inject
     AgentConfig config;
@@ -141,51 +141,46 @@ public class KCSSearchTool {
     private String parseKCSResponse(String query, String json) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== KCS Search Results for: \"").append(query).append("\" ===\n\n");
-
-        // Count results
+    
         int count = 0;
         int pos = 0;
-
+    
         while (pos < json.length()) {
-            int titleIdx = json.indexOf("\"title\":\"", pos);
+            int titleIdx = json.indexOf("\"publishedTitle\":\"", pos);
             if (titleIdx == -1) break;
-
-            int titleStart = titleIdx + 9;
+    
+            int titleStart = titleIdx + 18;
             int titleEnd   = json.indexOf('"', titleStart);
             if (titleEnd == -1) break;
             String title = json.substring(titleStart, titleEnd);
-
-            // Find URL
-            int urlIdx = json.indexOf("\"viewUri\":\"", titleIdx);
-            if (urlIdx == -1) urlIdx = json.indexOf("\"url\":\"", titleIdx);
+    
+            // Find view_uri
+            int uriIdx = json.indexOf("\"view_uri\":\"", titleIdx);
             String articleUrl = "";
-            if (urlIdx != -1) {
-                int urlStart = json.indexOf('"', urlIdx + 1);
-                urlStart = json.indexOf('"', urlStart + 1) + 1;
-                int urlEnd = json.indexOf('"', urlStart);
-                if (urlEnd != -1) {
-                    articleUrl = json.substring(urlStart, urlEnd);
-                }
+            if (uriIdx != -1) {
+                int uriStart = uriIdx + 12;
+                int uriEnd = json.indexOf('"', uriStart);
+                if (uriEnd != -1) articleUrl = json.substring(uriStart, uriEnd);
             }
-
+    
             count++;
             sb.append(count).append(". **").append(title).append("**\n");
             if (!articleUrl.isBlank()) {
                 sb.append("   ").append(articleUrl).append("\n");
             }
             sb.append("\n");
-
+    
             pos = titleEnd + 1;
             if (count >= 5) break;
         }
-
+    
         if (count == 0) {
-            sb.append("No KCS articles found for this query.\n\n");
+            sb.append("No KCS articles found.\n\n");
             sb.append(buildFallbackResponse(query));
         } else {
             sb.append("=== End of KCS results ===");
         }
-
+    
         return sb.toString();
     }
 
