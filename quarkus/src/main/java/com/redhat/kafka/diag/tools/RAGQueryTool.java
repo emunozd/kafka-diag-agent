@@ -73,7 +73,11 @@ public class RAGQueryTool {
         }
 
         // Step 3: format results for the agent
-        return formatResults(query, results);
+        String formatted = formatResults(query, results);
+        LOG.infof("RAG returned %d chunks, preview: %s",
+                results.size(),
+                formatted.substring(0, Math.min(300, formatted.length())).replace("\n", " "));
+        return formatted;
     }
 
     private String formatResults(String query, List<ChromaDBClient.SearchResult> results) {
