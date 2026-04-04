@@ -1,11 +1,12 @@
 package com.redhat.kafka.diag.tools;
 
-import dev.langchain4j.agent.tool.Tool;
-import jakarta.enterprise.context.ApplicationScoped;
-import org.jboss.logging.Logger;
-
 import java.util.Map;
 import java.util.TreeMap;
+
+import org.jboss.logging.Logger;
+
+import dev.langchain4j.agent.tool.Tool;
+import jakarta.enterprise.context.ApplicationScoped;
 
 /**
  * Report Upload Tool — Phase 4.
@@ -78,6 +79,7 @@ public class ReportUploadTool {
 
     /** Store the extracted report files for the current request thread. */
     public static void setReportFiles(Map<String, String> files) {
+        LOG.infof("Extracted files: %s", files.keySet());
         reportFiles.set(files);
     }
 
