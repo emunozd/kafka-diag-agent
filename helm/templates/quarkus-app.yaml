@@ -53,6 +53,43 @@ spec:
         app: kafka-diag-app
     spec:
       serviceAccountName: kafka-diag-sa
+      initContainers:
+        # Wait for ChromaDB to be ready before starting the app.
+        # Without this, PDFIndexer starts and fails because ChromaDB is not yet accepting connections.
+        - name: wait-for-chromadb
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for ChromaDB..."
+              until curl -sf http://chromadb.{{ .Values.namespace }}.svc.cluster.local:8000/api/v2/heartbeat; do
+                echo "ChromaDB not ready yet — retrying in 5s"
+                sleep 5
+              done
+              echo "ChromaDB is ready"
+        {{- if .Values.llm.local }}
+        # Wait for the LLM InferenceService to be ready (local mode only).
+        # The nomic-embed model must also be available for PDF indexing embeddings.
+        - name: wait-for-llm
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for LLM (Qwen3)..."
+              until curl -sf http://qwen3-8b-llm-predictor.{{ .Values.namespace }}.svc.cluster.local:8000/v1/models; do
+                echo "LLM not ready yet — retrying in 10s"
+                sleep 10
+              done
+              echo "LLM is ready"
+              echo "Waiting for embedding model (nomic-embed)..."
+              until curl -sf http://nomic-embed-svc.{{ .Values.namespace }}.svc.cluster.local:8000/v1/models; do
+                echo "Embedding model not ready yet — retrying in 10s"
+                sleep 10
+              done
+              echo "Embedding model is ready"
+        {{- end }}
       containers:
         - name: kafka-diag-app
           image: {{ .Values.app.image }}
