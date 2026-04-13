@@ -207,8 +207,17 @@ helm upgrade kafka-diag ./helm/ \
 
 ```bash
 helm uninstall kafka-diag
-oc delete pvc -n kafka-diag-agent --all
+oc delete namespace kafka-diag-agent
+
+# ClusterRole and ClusterRoleBinding are cluster-scoped and are not
+# deleted when the namespace is removed — delete them manually
+oc delete clusterrole kafka-diag-reader --ignore-not-found
+oc delete clusterrolebinding kafka-diag-reader-binding --ignore-not-found
 ```
+
+Note: from the current chart version these resources include Helm annotations
+and `helm uninstall` will delete them automatically.
+Manual deletion only applies if you are coming from a previous installation.
 
 ---
 
