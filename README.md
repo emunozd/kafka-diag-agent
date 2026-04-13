@@ -159,12 +159,12 @@ oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.1
 oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/debezium/3.2.7
 
 # Upload Streams PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /opt/disk/streams_docs/*.pdf; do
+for pdf in /path/to/pdfdata/streams/3.1/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.1/
 done
 
 # Upload Debezium PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /opt/disk/debezium_docs/*.pdf; do
+for pdf in /path/to/pdfdata/debezium/3.2.7/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/debezium/3.2.7/
 done
 
