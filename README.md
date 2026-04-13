@@ -159,12 +159,12 @@ oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.1
 oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/debezium/3.2.7
 
 # Upload Streams PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /path/to/pdfdata/streams/3.1/*.pdf; do
+for pdf in /opt/disk/streams_docs/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.1/
 done
 
 # Upload Debezium PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /path/to/pdfdata/debezium/3.2.7/*.pdf; do
+for pdf in /opt/disk/debezium_docs/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/debezium/3.2.7/
 done
 
@@ -322,3 +322,88 @@ curl -s https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/main/to
 - **LangChain4j memory isolation**: use `@MemoryId UUID` per agent call for two-phase diagnosis
 - **Qute escaping**: escape `{` in YAML content with `\{` to prevent template engine errors
 - **Stale ReplicaSets**: after patching InferenceService, delete old RS and pods manually
+
+---
+
+## Troubleshooting
+
+### Changing vLLM parameters (gpu-memory-utilization, max-model-len, etc.)
+
+Parameters like `--gpu-memory-utilization` and `--max-model-len` live in the
+`ServingRuntime`, not in the `InferenceService`. To change them:
+
+**Step 1 — Patch the ServingRuntime:**
+```bash
+oc patch servingruntimes vllm-runtime-llm -n kafka-diag-agent --type=json -p='[
+  {"op": "replace", "path": "/spec/containers/0/args", "value": [
+    "--model=/mnt/models",
+    "--dtype=auto",
+    "--max-model-len=14000",
+    "--gpu-memory-utilization=0.80",
+    "--max-num-seqs=4",
+    "--enable-auto-tool-choice",
+    "--tool-call-parser=hermes"
+  ]}
+]'
+```
+
+**Step 2 — Delete the current pod:**
+```bash
+oc delete pod -n kafka-diag-agent -l serving.kserve.io/inferenceservice=qwen3-8b-llm --force --grace-period=0
+```
+
+**Step 3 — RHOAI will recreate stale ReplicaSets. Delete them:**
+```bash
+# Find all RS with 0 desired replicas and delete them
+oc get rs -n kafka-diag-agent | grep qwen3 | grep "0         0         0" | awk '{print $1}' | xargs oc delete rs -n kafka-diag-agent
+```
+
+**Step 4 — Verify the new pod has the correct args:**
+```bash
+oc describe pod -n kafka-diag-agent -l serving.kserve.io/inferenceservice=qwen3-8b-llm | grep -A15 "Args"
+```
+
+To make the change permanent, update `helm/values.yaml` and commit:
+```yaml
+llm:
+  gpu:
+    memoryUtilization: "0.80"
+    maxModelLen: "14000"
+```
+
+### ChromaDB Permission Denied on startup
+
+If ChromaDB crashes with `Permission denied` on `/data`:
+
+```bash
+# Grant anyuid SCC to the service account
+oc adm policy add-scc-to-user anyuid -z kafka-diag-sa -n kafka-diag-agent
+
+# Restart ChromaDB
+oc rollout restart deployment/chromadb -n kafka-diag-agent
+```
+
+This is handled automatically by the Helm chart via `serviceaccount.yaml`.
+The manual fix is only needed if the ClusterRoleBinding was not created.
+
+### ClusterRole/ClusterRoleBinding errors on helm install
+
+If you get `cannot be imported into the current release` errors:
+
+```bash
+oc delete clusterrole kafka-diag-reader --ignore-not-found
+oc delete clusterrolebinding kafka-diag-reader-binding --ignore-not-found
+oc delete clusterrolebinding kafka-diag-sa-anyuid --ignore-not-found
+```
+
+Then retry `helm install`.
+
+### GPU out of memory (NVMLError_Unknown)
+
+If vLLM crashes with GPU memory errors, reboot the host:
+```bash
+# On CRC
+crc stop && crc start
+```
+
+Then reduce `gpu-memory-utilization` in the ServingRuntime (see above).
