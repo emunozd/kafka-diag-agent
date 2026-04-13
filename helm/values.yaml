@@ -22,7 +22,7 @@ llm:
     image: registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.3.0
     model: hf://RedHatAI/Qwen3-8B-FP8-dynamic
     memoryUtilization: "0.70"
-    maxModelLen: "4096"
+    maxModelLen: "14000"
     maxNumSeqs: "4"
     memoryLimit: 14Gi
     memoryRequest: 12Gi
