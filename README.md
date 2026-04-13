@@ -30,69 +30,181 @@
 | Red Hat Streams for Apache Kafka | 3.1 | 18 documents |
 | Red Hat build of Debezium | 3.2.7 | 4 documents |
 
----
+PDFs are stored in a PVC with this structure:
 
-## How it works
-
-The agent receives a natural language question and operates in two modes:
-
-**Live cluster mode** — queries Kafka CRDs, pods, events, logs, and Debezium
-connectors via the Kubernetes API (no `oc` binary required), then enriches
-with RAG documentation and KCS articles.
-
-**Report mode** — accepts a Strimzi `report.sh` ZIP file uploaded via the Web UI,
-extracts all YAML/text files, and diagnoses without direct cluster access.
-Supports reports generated with `--connect` flag for KafkaConnect/Debezium analysis.
-
-In both modes the agent:
-1. Gathers cluster data (live or from ZIP)
-2. Searches ChromaDB for relevant documentation chunks (Streams + Debezium)
-3. Searches the Red Hat KCS Knowledge Base for known solutions
-4. Returns: Summary → Findings → Documentation Context → Recommendations → KCS Articles
+```
+/pdfdata/
+├── streams/
+│   └── 3.1/
+│       └── *.pdf
+└── debezium/
+    └── 3.2.7/
+        └── *.pdf
+```
 
 ---
 
-## Quick start
+## Pre-requisites
+
+Before running `helm install` make sure you have the following:
+
+### 1. OpenShift cluster with RHOAI 3.3
+
+- OCP 4.x cluster with RHOAI 3.3 operator installed
+- At least one GPU node with CUDA support (tested on RTX 5060 Ti 16GB)
+- `oc` CLI installed and logged in as cluster-admin or with sufficient permissions
+
+### 2. Helm 3
+
+```bash
+# macOS
+brew install helm
+
+# Linux
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+### 3. RHOAI ServingRuntime for vLLM
+
+The Helm chart deploys InferenceServices that require a vLLM ServingRuntime.
+Apply it before running helm install:
+
+```bash
+oc apply -f helm/templates/servingruntimes.yaml
+```
+
+### 4. HuggingFace token (required for local GPU mode)
+
+The LLM and embedding models are pulled from HuggingFace.
+Get your token at https://huggingface.co/settings/tokens
+
+### 5. Red Hat KCS offline token (optional)
+
+Enables real-time search of the Red Hat Knowledge Base.
+Get your token at https://access.redhat.com/management/api
+
+### 6. Documentation PDFs
+
+Download the official Red Hat documentation PDFs and place them in the correct
+folder structure. They will be uploaded to the PVC after deployment.
+
+**Red Hat Streams for Apache Kafka 3.1:**
+https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.1
+
+**Red Hat build of Debezium 3.2.7:**
+https://docs.redhat.com/en/documentation/red_hat_build_of_debezium/3.2.7
+
+---
+
+## Installation
 
 ### Option A — Local GPU on OCP (RHOAI 3.3)
 
 ```bash
+# Clone the repo
+git clone https://github.com/emunozd/kafka-diag-agent
+cd kafka-diag-agent
+
+# Install — replace <your-hf-token> with your HuggingFace token
 helm install kafka-diag ./helm/ \
-  --set huggingface.token=hf_xxx
+  --set huggingface.token=<your-hf-token>
+
+# Optional: enable KCS Knowledge Base search
+helm install kafka-diag ./helm/ \
+  --set huggingface.token=<your-hf-token> \
+  --set kcs.offlineToken=<your-rh-offline-token>
 ```
 
-### Option B — Quarkus app only with external LLM
+### Option B — External LLM (Claude, OpenAI, etc.)
 
 ```bash
 helm install kafka-diag ./helm/ \
-  --set llm.local=false \
+  -f helm/values-external-llm.yaml \
   --set llm.external.baseUrl=https://api.anthropic.com/v1 \
-  --set llm.external.apiKey=sk-ant-xxx \
+  --set llm.external.apiKey=<your-api-key> \
   --set llm.external.modelName=claude-sonnet-4-6
 ```
 
-### KCS integration (optional)
+---
+
+## Post-installation steps
+
+### 1. Wait for all pods to be ready
 
 ```bash
-# Get your offline token at https://access.redhat.com/management/api
-oc create secret generic rh-api-credentials \
-  -n kafka-diag-agent \
-  --from-literal=RH_OFFLINE_TOKEN=<your-offline-token>
-
-oc rollout restart deployment/kafka-diag-app -n kafka-diag-agent
+oc get pods -n kafka-diag-agent -w
 ```
 
-### Adding documentation PDFs dynamically
+Expected state:
+
+```
+chromadb-xxx                  1/1     Running
+kafka-diag-app-xxx            1/1     Running
+nomic-embed-predictor-xxx     1/1     Running
+qwen3-8b-llm-predictor-xxx    1/1     Running
+```
+
+Note: the `kafka-diag-app` pod will not start until ChromaDB and the LLM
+are ready — this is enforced by `initContainers` in the Deployment.
+
+### 2. Upload documentation PDFs
+
+The PDF PVC is mounted read-only in the app pod. Use the ChromaDB pod to upload:
 
 ```bash
 CHROMA_POD=$(oc get pod -n kafka-diag-agent -l app=chromadb -o jsonpath='{.items[0].metadata.name}')
 
-# Create folder and copy PDFs
-oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.2
-for pdf in /local/path/*.pdf; do
-  oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.2/
+# Create folder structure
+oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.1
+oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/debezium/3.2.7
+
+# Upload Streams PDFs
+for pdf in /local/path/streams/*.pdf; do
+  oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.1/
 done
-# PDF Watcher indexes automatically within 10 minutes
+
+# Upload Debezium PDFs
+for pdf in /local/path/debezium/*.pdf; do
+  oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/debezium/3.2.7/
+done
+```
+
+### 3. Wait for PDF indexing to complete
+
+The PDF Watcher indexes new PDFs automatically. Monitor progress:
+
+```bash
+oc logs -f -n kafka-diag-agent deployment/kafka-diag-app | grep -E "indexed|skipped|failed|complete"
+```
+
+Expected output when done (~25 min for 22 PDFs):
+
+```
+PDF indexing complete — indexed=22 skipped=0 failed=0
+```
+
+### 4. Access the Web UI
+
+```bash
+oc get route kafka-diag-app -n kafka-diag-agent
+```
+
+Open the URL in your browser.
+
+---
+
+## Upgrade
+
+```bash
+helm upgrade kafka-diag ./helm/ \
+  --set huggingface.token=<your-hf-token>
+```
+
+## Uninstall
+
+```bash
+helm uninstall kafka-diag
+oc delete pvc -n kafka-diag-agent --all
 ```
 
 ---
@@ -106,16 +218,25 @@ kafka-diag-agent/
 │   ├── values.yaml
 │   ├── values-external-llm.yaml
 │   └── templates/
+│       ├── namespace.yaml
+│       ├── rbac.yaml
+│       ├── serviceaccount.yaml
+│       ├── secrets.yaml
+│       ├── pvcs.yaml
+│       ├── servingruntimes.yaml
+│       ├── inferenceservices.yaml
+│       ├── chromadb.yaml
+│       └── quarkus-app.yaml
 ├── quarkus/                      ← Java app (Quarkus + LangChain4j)
 │   ├── pom.xml
 │   └── src/main/java/com/redhat/kafka/diag/
-│       ├── agent/                ← KafkaDiagnosticAgent (LangChain4j AI service)
+│       ├── agent/                ← KafkaDiagnosticAgent
 │       ├── config/               ← AgentConfig
 │       ├── rag/                  ← EmbeddingClient, ChromaDBClient, PDFIndexer, PDFWatcher
 │       ├── resource/             ← DiagnosticResource (REST endpoints)
 │       └── tools/                ← KubernetesTool, RAGQueryTool, KCSSearchTool,
 │                                    ReportUploadTool, DebeziumTool, StrimziReportTool
-└── docs/                         ← Per-phase deployment and implementation guides
+└── docs/
     ├── phase-1-infrastructure.md
     ├── phase-2-quarkus-app.md
     ├── phase-3-rag.md
@@ -133,9 +254,9 @@ kafka-diag-agent/
 | [Phase 1](docs/phase-1-infrastructure.md) | ✅ Complete | Base infrastructure: models, ChromaDB, RBAC |
 | [Phase 2](docs/phase-2-quarkus-app.md) | ✅ Complete | Quarkus app + Kubernetes API tools |
 | [Phase 3](docs/phase-3-rag.md) | ✅ Complete | RAG over documentation PDFs + SHA-256 incremental indexing |
-| [Phase 4](docs/phase-4-web-ui.md) | ✅ Complete | Web UI v2 + Strimzi report.sh ZIP upload + RAG citation |
+| [Phase 4](docs/phase-4-web-ui.md) | ✅ Complete | Web UI v2 + Strimzi report.sh ZIP upload |
 | [Phase 5](docs/phase-5-kcs-pdf-watcher.md) | ✅ Complete | KCS API integration + dynamic PDF watcher |
-| [Phase 6](docs/phase-6-debezium.md) | ✅ Complete | Debezium CDC diagnostics + Debezium docs + folder reorganization |
+| [Phase 6](docs/phase-6-debezium.md) | ✅ Complete | Debezium CDC diagnostics + Debezium docs |
 
 ---
 
@@ -143,21 +264,31 @@ kafka-diag-agent/
 
 **Live cluster mode:**
 ```
+what kind of issues we have
+what's the current cluster resource usage
+how to tune the cluster for better performance
 give me a brief status of the current cluster
-why is mirrormaker not working
 why do we have consumer lag
 analyze any issues in my environment
-how can I tune kafka for better performance
-do I have any debezium connectors running
-how do I configure a debezium postgresql connector
+check debezium connectors status and issues
 ```
 
 **Report mode (upload a Strimzi report.sh ZIP):**
 ```
 analyze the uploaded report and summarize all findings
-analyze the kafka connect and debezium connectors in this report
+analyze kafka connect and debezium connectors status and configuration
 what issues do you see in the kafka cluster
 check the kafka events for errors and warnings
+```
+
+To generate a Strimzi report:
+
+```bash
+curl -s https://raw.githubusercontent.com/strimzi/strimzi-kafka-operator/main/tools/report.sh \
+  | bash -s -- \
+    --namespace=<kafka-namespace> \
+    --cluster=<kafka-cluster-name> \
+    --connect=<connect-cluster-name>   # optional, for KafkaConnect/Debezium
 ```
 
 ---
@@ -167,17 +298,15 @@ check the kafka events for errors and warnings
 - **RTX 5060 Ti (CUDA 13.0)**: requires `rhaiis/vllm-cuda-rhel9:3.3.0`
 - **vLLM port**: changed to `8000` in RHOAI 3.3
 - **Qwen3 tool calling**: requires `--enable-auto-tool-choice --tool-call-parser=hermes`
-- **max-model-len**: must be 14000+ for multi-tool sessions (`--gpu-memory-utilization=0.90`)
+- **max-model-len**: must be 14000+ for multi-tool sessions
 - **KServe headless service**: does not work for embeddings — create a separate ClusterIP Service
 - **ChromaDB 1.0.0**: requires full tenant/database path in all API v2 routes
 - **PDFBox 3.x**: use `Loader.loadPDF(new RandomAccessReadBufferedFile(file))`
 - **Java virtual threads + HttpClient**: use `HttpURLConnection` instead
-- **ThreadLocal across requests**: doesn't work — combine upload + diagnose in single request
-- **Stale ReplicaSets**: after patching ServingRuntime, scale the correct RS manually
 - **KCS deprecated API**: `/rs/cases/solutions` → use `/support/search/kcs?fq=documentKind:Solution`
-- **Pre-fetch pattern**: inject RAG+KCS context into prompt directly — don't rely on model tool calls
-- **ZIP path normalization**: handle both `report-DATE/reports/` and `reports/` prefixes
-- **Issue extraction**: parse `conditions[].message` from Kafka YAML for specific RAG/KCS queries
 - **PDF watcher delay**: use `10×` interval as startup delay to avoid competing with initial indexing
 - **PVC read-only**: app pod mounts PDF PVC as read-only — use ChromaDB pod for file operations
-- **Debezium tasks.max**: must always be `1` — Debezium does not support parallel tasks
+- **Race condition**: use `initContainers` to wait for ChromaDB and LLM before starting the app
+- **LangChain4j memory isolation**: use `@MemoryId UUID` per agent call for two-phase diagnosis
+- **Qute escaping**: escape `{` in YAML content with `\{` to prevent template engine errors
+- **Stale ReplicaSets**: after patching InferenceService, delete old RS and pods manually
