@@ -50,8 +50,8 @@ Before running `helm install` make sure you have the following:
 
 ### 1. OpenShift cluster with RHOAI 3.3
 
-- OCP 4.x cluster with RHOAI 3.3 operator installed
-- At least one GPU node with CUDA support (tested on RTX 5060 Ti 16GB)
+- OCP 4.x cluster with [RHOAI 3.3 operator installed](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/installing_and_uninstalling_openshift_ai_self-managed/installing-and-deploying-openshift-ai_install#installing-openshift-ai-operator-using-web-console_operator-install)
+- At least one [GPU node with CUDA support](https://developers.redhat.com/articles/2025/11/27/how-enable-nvidia-gpu-acceleration-openshift-local) (tested on RTX 5060 Ti 16GB)
 - `oc` CLI installed and logged in as cluster-admin or with sufficient permissions
 
 ### 2. Helm 3
@@ -64,26 +64,17 @@ brew install helm
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
-### 3. RHOAI ServingRuntime for vLLM
-
-The Helm chart deploys InferenceServices that require a vLLM ServingRuntime.
-Apply it before running helm install:
-
-```bash
-oc apply -f helm/templates/servingruntimes.yaml
-```
-
-### 4. HuggingFace token (required for local GPU mode)
+### 3. HuggingFace token (required for local GPU mode)
 
 The LLM and embedding models are pulled from HuggingFace.
 Get your token at https://huggingface.co/settings/tokens
 
-### 5. Red Hat KCS offline token (optional)
+### 4. Red Hat KCS offline token (optional)
 
 Enables real-time search of the Red Hat Knowledge Base.
 Get your token at https://access.redhat.com/management/api
 
-### 6. Documentation PDFs
+### 5. Documentation PDFs
 
 Download the official Red Hat documentation PDFs and place them in the correct
 folder structure. They will be uploaded to the PVC after deployment.
@@ -159,12 +150,12 @@ oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.1
 oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/debezium/3.2.7
 
 # Upload Streams PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /opt/disk/streams_docs/*.pdf; do
+for pdf in /path/to/pdfdata/streams/3.1/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.1/
 done
 
 # Upload Debezium PDFs — adjust local path to where you downloaded the PDFs
-for pdf in /opt/disk/debezium_docs/*.pdf; do
+for pdf in /path/to/pdfdata/debezium/3.2.7/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/debezium/3.2.7/
 done
 
