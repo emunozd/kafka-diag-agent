@@ -17,15 +17,14 @@ spec:
     type: Source
     sourceStrategy:
       from:
-        kind: ImageStreamTag
-        namespace: openshift
-        name: java:latest
+        kind: DockerImage
+        name: registry.redhat.io/ubi9/openjdk-21:latest
       env:
         - name: MAVEN_ARGS_APPEND
           value: "-Dquarkus.package.type=uber-jar"
   output:
     to:
-      kind: ImageStreamTag
+      kind: DockerImage
       name: kafka-diag-agent:latest
   triggers:
     - type: ConfigChange
