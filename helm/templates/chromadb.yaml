@@ -20,6 +20,8 @@ spec:
         app: chromadb
     spec:
       serviceAccountName: kafka-diag-sa
+      securityContext:
+        runAsUser: 0
       containers:
         - name: chromadb
           image: {{ .Values.chromadb.image }}
