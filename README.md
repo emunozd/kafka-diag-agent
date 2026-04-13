@@ -158,15 +158,18 @@ CHROMA_POD=$(oc get pod -n kafka-diag-agent -l app=chromadb -o jsonpath='{.items
 oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/streams/3.1
 oc exec -n kafka-diag-agent $CHROMA_POD -- mkdir -p /pdfdata/debezium/3.2.7
 
-# Upload Streams PDFs
-for pdf in /local/path/streams/*.pdf; do
+# Upload Streams PDFs — adjust local path to where you downloaded the PDFs
+for pdf in /opt/disk/streams_docs/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/streams/3.1/
 done
 
-# Upload Debezium PDFs
-for pdf in /local/path/debezium/*.pdf; do
+# Upload Debezium PDFs — adjust local path to where you downloaded the PDFs
+for pdf in /opt/disk/debezium_docs/*.pdf; do
   oc cp "$pdf" kafka-diag-agent/$CHROMA_POD:/pdfdata/debezium/3.2.7/
 done
+
+# Verify structure
+oc exec -n kafka-diag-agent $CHROMA_POD -- find /pdfdata -name "*.pdf" | sort
 ```
 
 ### 3. Wait for PDF indexing to complete
